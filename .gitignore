@@ -1,0 +1,15 @@
+
+__pycache__/
+*.ipynb_checkpoints
+*.pyc
+*.out
+*.egg-info/
+*.egg
+
+outputs/
+tmp/
+res/f_mnist_pretrained
+configs/
+configs_scripts/
+
+.vscode/**
