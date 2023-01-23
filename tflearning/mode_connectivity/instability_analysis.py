@@ -49,9 +49,9 @@ class InstabilityAnalyzer(Runner):
             “Linear Mode Connectivity and the Lottery Ticket Hypothesis.” arXiv. http://arxiv.org/abs/1912.05671.
 
     Args:
+        instability_sweep (Union[SweepResult, str]): The (path to the) sweep result. Contains all runs to earlier training checkpoints.
         main_training_job (Union[JobResult, str]): The main training run that creates the checkpoints for resuming.
                                                    Provide this for Instability analysis a la Frankle et al. 
-        instability_sweep (Union[SweepResult, str]): The (path to the) sweep result. Contains all runs to earlier training checkpoints.
         score_fn (Union[nn.Module, Metric, str], optional): The score function for measuring model performance on the datasets. 
                                                             Defaults to TAccuracy().
         interpolation_factors (List[float], optional): List of interpolation factors. Defaults to list(torch.linspace(0.0, 1.0, 5)).
@@ -87,7 +87,7 @@ class InstabilityAnalyzer(Runner):
     def __init__(self,
                  instability_sweep: Union[SweepResult, Path, str],
                  main_training_job: Union[JobResult, Path, str] = None,
-                 score_fn: Union[nn.Module, Metric, str] = TAccuracy(),
+                 score_fn: Union[nn.Module, Metric, str] = 'TError',
                  interpolation_factors: List[float] = list(torch.linspace(0.0, 1.0, 5)),
                  interpolate_linear_kwargs: Dict[str, Any] = {},
                  init_model_idx_k_param_name: str = 'trainer.resume_training.checkpoint_idx',

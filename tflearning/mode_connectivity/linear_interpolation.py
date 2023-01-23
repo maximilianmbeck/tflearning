@@ -68,7 +68,7 @@ def interpolate_linear_runs(
         data_cfg = copy.deepcopy(run_0.config.config.data)
         # set training augmentations to the validation augmentations
         with open_dict(data_cfg):
-            data_cfg.train_split_transforms = data_cfg.get('val_split_transforms', None)
+            data_cfg.train_split_transforms = data_cfg.get('val_split_transforms', {})
 
         ds_generator = DatasetGenerator(**data_cfg)
         ds_generator.generate_dataset()
@@ -90,17 +90,19 @@ def interpolate_linear_runs(
         models = []
         m_idxes = []
         for i, r in enumerate(runs):
-            try:
-                m = r.get_model_idx(idx=midx, device=device)
-            except FileNotFoundError:
-                raise ValueError(f'Missing model_idx={midx} in run_{i}: {r}')
-            models.append(m)
             if midx == -1:
-                m_idxes.append(r.best_model_idx)
+                run_midx = r.best_model_idx
             elif midx == -2:
-                m_idxes.append(r.highest_model_idx)
+                run_midx = r.highest_model_idx
             else:
-                m_idxes.append(midx)
+                run_midx = midx
+            
+            m_idxes.append(run_midx)
+            try:
+                m = r.get_model_idx(idx=run_midx, device=device)
+            except FileNotFoundError:
+                raise ValueError(f'Missing model_idx={run_midx} in run_{i}: {r}')
+            models.append(m)
 
         model_0, model_1 = models
 
