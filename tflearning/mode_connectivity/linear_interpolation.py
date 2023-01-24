@@ -226,6 +226,8 @@ def interpolate_linear(model_0: nn.Module,
     assert get_model_device(model_0) == get_model_device(model_1), f'Models to interpolate not on same device!'
     device = get_model_device(model_0)
     assert 'train' not in other_datasets, f'`train` is a reserved dataset name. Please rename this evaluation dataset.'
+    if isinstance(interpolation_factors, list): 
+        interpolation_factors = torch.tensor(interpolation_factors)
     assert interpolation_factors.dim() == 1, '`interpolation_factors` must be tensor of dimension 1.'
     bn_types = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
 
