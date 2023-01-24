@@ -14,8 +14,9 @@ def plot_barriers(
     filename: str = '',
     select_interpolate_at_idxes: int = -1,
     y_label: str = 'classification error',
-    color_gradient_between: Tuple[str, str] = ('#3e1c70', '#feae7c'), 
-    figsize=(2 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)) -> Figure:
+    color_gradient_between: Tuple[str, str] = ('#3e1c70', '#feae7c'),
+    figsize=(2 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)
+) -> Figure:
     # make a plot of barriers over init_model_idx_k (alpha vs. error/accuracy)
     # create an axes for every dataset
     assert len(
@@ -23,7 +24,7 @@ def plot_barriers(
     ) == 4, f'Instability df must have 4 index levels, but has {len(list(instability_df.index.names))}: {list(instability_df.index.names)}'
 
     # instability_df contains columns: init_model_idx_k, job, seeds, model_idxes
-    plot_df = instability_df.droplevel(level='job', axis=0).droplevel(level='alpha', axis=1)
+    plot_df = instability_df.droplevel(level='job', axis=0)
 
     # get all datasets
     datasets = list(instability_df.columns.get_level_values('datasets').unique())
@@ -40,7 +41,8 @@ def plot_barriers(
     for ax, dataset in zip(axes, datasets):
         handles_per_dataset[dataset] = []
         if color_gradient_between:
-            ax.set_prop_cycle(color=get_color_gradient(*color_gradient_between, len(plot_df.groupby( level='init_model_idx_k'))))
+            ax.set_prop_cycle(
+                color=get_color_gradient(*color_gradient_between, len(plot_df.groupby(level='init_model_idx_k'))))
         for init_idx_k, init_idx_k_df in plot_df.groupby(level='init_model_idx_k'):
             seed_df = init_idx_k_df.droplevel(0)
             mean_df = seed_df.groupby(by='model_idxes').mean()
@@ -64,7 +66,12 @@ def plot_barriers(
     return f
 
 
-def plot_instability(instability_df: pd.DataFrame,  title: str = '', select_interpolate_at_idxes: int = -1, filename: str = '', figsize=(1.5 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)):
+def plot_instability(instability_df: pd.DataFrame,
+                     title: str = '',
+                     select_interpolate_at_idxes: int = -1,
+                     filename: str = '',
+                     x_scale: str = '',
+                     figsize=(1.5 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)):
     assert len(
         list(instability_df.index.names)
     ) == 4, f'Instability df must have 4 index levels, but has {len(list(instability_df.index.names))}: {list(instability_df.index.names)}'
@@ -80,14 +87,14 @@ def plot_instability(instability_df: pd.DataFrame,  title: str = '', select_inte
 
     # create mean and std df
     mean_df = plot_idf.groupby(level=['init_model_idx_k', 'model_idxes']).mean()
-    std_df = plot_idf.groupby(level=['init_model_idx_k', 'model_idxes']).std() # TODO plot this too
+    std_df = plot_idf.groupby(level=['init_model_idx_k', 'model_idxes']).std()  # TODO plot this too
 
     # select the row at 'select_interpolate_at_idxes' of level 'init_model_idx_k'
     selected_interpolate_at_model_idxes = {}
     for i, k in mean_df.groupby(level='init_model_idx_k'):
-        selected_interpolate_at_model_idxes[i]=k.iloc[select_interpolate_at_idxes]
-    
-    plot_mean_df = pd.DataFrame(selected_interpolate_at_model_idxes ).transpose().rename_axis('init_model_idx_k', axis=0)
+        selected_interpolate_at_model_idxes[i] = k.iloc[select_interpolate_at_idxes]
+
+    plot_mean_df = pd.DataFrame(selected_interpolate_at_model_idxes).transpose().rename_axis('init_model_idx_k', axis=0)
 
     #* Plotting: create figure
     f, ax = plt.subplots(1, 1, figsize=figsize, sharey=True)
@@ -104,13 +111,18 @@ def plot_instability(instability_df: pd.DataFrame,  title: str = '', select_inte
     ax.grid(alpha=.3)
     ax.set_xlabel('rewind index k')
     ax.set_ylabel('instability')
+    ax.set_xscale(x_scale)
 
     if filename:
         f.savefig(filename, dpi=300, bbox_inches='tight')
     return f
- 
 
-def plot_distances(distances_df: pd.DataFrame,  title: str = '', select_interpolate_at_idxes: int = -1, filename: str = '', figsize=(1.5 * 12 * 1 / 2.54, 2 * 8 * 1 / 2.54)):
+
+def plot_distances(distances_df: pd.DataFrame,
+                   title: str = '',
+                   select_interpolate_at_idxes: int = -1,
+                   filename: str = '',
+                   figsize=(1.5 * 12 * 1 / 2.54, 2 * 8 * 1 / 2.54)):
     assert len(
         list(distances_df.index.names)
     ) == 4, f'Instability df must have 4 index levels, but has {len(list(distances_df.index.names))}: {list(distances_df.index.names)}'
@@ -122,14 +134,14 @@ def plot_distances(distances_df: pd.DataFrame,  title: str = '', select_interpol
 
     # create mean and std df
     mean_df = df.groupby(level=['init_model_idx_k', 'model_idxes']).mean()
-    std_df = df.groupby(level=['init_model_idx_k', 'model_idxes']).std() # TODO plot this too
+    std_df = df.groupby(level=['init_model_idx_k', 'model_idxes']).std()  # TODO plot this too
 
     # select the row at 'select_interpolate_at_idxes' of level 'init_model_idx_k'
     selected_interpolate_at_model_idxes = {}
     for i, k in mean_df.groupby(level='init_model_idx_k'):
-        selected_interpolate_at_model_idxes[i]=k.iloc[select_interpolate_at_idxes]
-    
-    plot_mean_df = pd.DataFrame(selected_interpolate_at_model_idxes ).transpose().rename_axis('init_model_idx_k', axis=0)
+        selected_interpolate_at_model_idxes[i] = k.iloc[select_interpolate_at_idxes]
+
+    plot_mean_df = pd.DataFrame(selected_interpolate_at_model_idxes).transpose().rename_axis('init_model_idx_k', axis=0)
 
     # get all distances
     distances = list(distances_df.columns.get_level_values('distances').unique())
@@ -153,9 +165,9 @@ def plot_distances(distances_df: pd.DataFrame,  title: str = '', select_interpol
         ax.legend()
         ax.grid(alpha=.3)
         ax.set_ylabel(distance)
-    
+
     axes[-1].set_xlabel('rewind index k')
-    
+
     if filename:
         f.savefig(filename, dpi=300, bbox_inches='tight')
     return f
