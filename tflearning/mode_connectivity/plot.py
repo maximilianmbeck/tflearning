@@ -11,7 +11,7 @@ from ml_utilities.plot import get_color_gradient
 def plot_barriers(
     instability_df: pd.DataFrame,
     title: str = '',
-    filename: str = '',
+    save_format: str = '',
     select_interpolate_at_idxes: int = -1,
     y_label: str = 'classification error',
     color_gradient_between: Tuple[str, str] = ('#3e1c70', '#feae7c'),
@@ -61,16 +61,18 @@ def plot_barriers(
     axes[0].set_ylabel(y_label)
     plt.figlegend(frameon=False, loc='lower left', handles=handles_per_dataset[datasets[0]], bbox_to_anchor=(0.9, 0.1))
 
-    if filename:
-        f.savefig(filename, dpi=300, bbox_inches='tight')
+    if save_format:
+        assert title
+        f.savefig(f'{title}.{save_format}', dpi=300, bbox_inches='tight')
     return f
 
 
 def plot_instability(instability_df: pd.DataFrame,
                      title: str = '',
                      select_interpolate_at_idxes: int = -1,
-                     filename: str = '',
-                     x_scale: str = '',
+                     save_format: str = '',
+                     x_scale: str = 'symlog',
+                     y_lim: Tuple[float, float] = (-0.05, 1),
                      figsize=(1.5 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)):
     assert len(
         list(instability_df.index.names)
@@ -112,16 +114,19 @@ def plot_instability(instability_df: pd.DataFrame,
     ax.set_xlabel('rewind index k')
     ax.set_ylabel('instability')
     ax.set_xscale(x_scale)
+    ax.set_ylim(y_lim)
 
-    if filename:
-        f.savefig(filename, dpi=300, bbox_inches='tight')
+    if save_format:
+        assert title
+        f.savefig(f'{title}.{save_format}', dpi=300, bbox_inches='tight')
     return f
 
 
 def plot_distances(distances_df: pd.DataFrame,
                    title: str = '',
                    select_interpolate_at_idxes: int = -1,
-                   filename: str = '',
+                   save_format: str = '',
+                   x_scale: str = 'symlog',
                    figsize=(1.5 * 12 * 1 / 2.54, 2 * 8 * 1 / 2.54)):
     assert len(
         list(distances_df.index.names)
@@ -165,9 +170,11 @@ def plot_distances(distances_df: pd.DataFrame,
         ax.legend()
         ax.grid(alpha=.3)
         ax.set_ylabel(distance)
+        ax.set_xscale(x_scale)
 
     axes[-1].set_xlabel('rewind index k')
 
-    if filename:
-        f.savefig(filename, dpi=300, bbox_inches='tight')
+    if save_format:
+        assert title
+        f.savefig(f'{title}.{save_format}', dpi=300, bbox_inches='tight')
     return f
