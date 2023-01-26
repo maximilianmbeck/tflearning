@@ -1,6 +1,7 @@
+from typing import Union
 import copy
 import logging
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, ListConfig
 from pathlib import Path
 from ml_utilities.runner import Runner, run_job, run_sweep
 from ml_utilities.trainer import get_trainer_class
@@ -19,20 +20,23 @@ class TrainInstabilityAnalysis(Runner):
     def __init__(self,
                  run_config: DictConfig,
                  job_config: DictConfig,
-                 instability_analysis_config: DictConfig,
+                 instability_analysis_config: Union[DictConfig, ListConfig],
                  start_num: int = 0,
                  main_training_job_dir: str = None,
                  resume_training_sweep_dir: str = None):
         self.run_config = run_config
         self.job_config = job_config
-        self.instability_analysis_config = instability_analysis_config
         self.start_num = start_num
+        if not isinstance(instability_analysis_config, (ListConfig, list)):
+            self.instability_analysis_config = [instability_analysis_config]
+        else:
+            self.instability_analysis_config = instability_analysis_config
 
         self.main_training_job_dir = main_training_job_dir
         self.resume_training_sweep_dir = resume_training_sweep_dir
 
         self.gpu_id = self.run_config.gpu_ids[0]
-        self.save_every_idxes = list(self.instability_analysis_config.init_model_idxes_ks_or_every)
+        self.save_every_idxes = list(self.instability_analysis_config[0].init_model_idxes_ks_or_every)
 
         self.main_seed = self.job_config.experiment_data.seed
         s = self.main_seed
@@ -75,17 +79,18 @@ class TrainInstabilityAnalysis(Runner):
         runnable_resume_sweep_cfg.sweep = sweep_cfg
         return runnable_resume_sweep_cfg
 
-    def create_instability_analysis_config(self, main_training_job_dir: Path,
+    def create_instability_analysis_config(self, instability_analysis_cfg: DictConfig, main_training_job_dir: Path,
                                            resume_training_sweep_dir: Path) -> DictConfig:
         # override: instability_sweep, device, batch_size, init_model_idx_k_param_name
-        runnable_ia_cfg = copy.deepcopy(self.instability_analysis_config)
+        runnable_ia_cfg = copy.deepcopy(instability_analysis_cfg)
         runnable_ia_cfg.main_training_job = str(main_training_job_dir)
         runnable_ia_cfg.instability_sweep = str(resume_training_sweep_dir)
         runnable_ia_cfg.device = self.gpu_id
         runnable_ia_cfg.init_model_idx_k_param_name = self.init_model_idx_k_param_name
+        # use two times the training batch size since we are only evaluating
         runnable_ia_cfg.interpolate_linear_kwargs.update(OmegaConf.create(
             {'dataloader_kwargs': {
-                'batch_size': self.job_config.trainer.batch_size
+                'batch_size': 2 * self.job_config.trainer.batch_size
             }}))
         return runnable_ia_cfg
 
@@ -106,10 +111,12 @@ class TrainInstabilityAnalysis(Runner):
         LOGGER.info(f'IA STAGE B: Done. resume_training_sweep_dir: {self.resume_training_sweep_dir}')
 
         LOGGER.info('IA STAGE C: instability analysis')
-        instability_analysis_cfg = self.create_instability_analysis_config(self.main_training_job_dir,
-                                                                           self.resume_training_sweep_dir)
-        instability_analyzer = InstabilityAnalyzer(**instability_analysis_cfg)
-        instability_analyzer.run()
-        self.runner_dir = instability_analyzer.directory
-        LOGGER.info(f'IA STAGE C: Done. instability_analysis_dir: {self.runner_dir}')
+        for i, ia_cfg in enumerate(self.instability_analysis_config):
+            LOGGER.info(f'C-{i}: save_folder_suffix: {ia_cfg.get("save_folder_suffix", "")}')
+            instability_analysis_cfg = self.create_instability_analysis_config(ia_cfg, self.main_training_job_dir,
+                                                                               self.resume_training_sweep_dir)
+            instability_analyzer = InstabilityAnalyzer(**instability_analysis_cfg)
+            instability_analyzer.run()
+        self.runner_dir = self.resume_training_sweep_dir
+        LOGGER.info(f'IA STAGE C: Done. Instability analysis can be found in folder: {self.runner_dir}')
         LOGGER.info('IA Done.')
