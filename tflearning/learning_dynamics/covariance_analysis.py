@@ -13,7 +13,7 @@ from ml_utilities.output_loader import JobResult
 from ml_utilities.utils import get_device
 from ml_utilities.data.datasetgenerator import DatasetGenerator
 from ml_utilities.run_utils.runner import Runner
-from ml_utilities.pandas_utils import save_df_dict
+from ml_utilities.pandas_utils import save_df_dict, load_df_dict_pickle
 
 LOGGER = logging.getLogger(__name__)
 """Module for doing analyses of the covariance matrix of the gradients of a neural network."""
@@ -154,7 +154,7 @@ class GradCovarianceAnalyzer(Runner):
         dataloaders: Dict[str, data.DataLoader] = {},
         dataloader_kwargs: Dict[str, Any] = {
             'drop_last': False,
-            'num_workers': 1,  #4,
+            'num_workers': 4,
             'persistent_workers': True,
             'pin_memory': True
         },
@@ -197,9 +197,16 @@ class GradCovarianceAnalyzer(Runner):
         #* create save folders
         self.save_folder_suffix = save_folder_suffix
         self.save_to_disk = save_to_disk
+        self.reload_results = False
         if self.save_to_disk:
-            self.runner_dir, self.combined_results_dir, self.single_results_dir = self._create_save_folders(
-                save_folder_suffix)
+            try:
+                self.runner_dir, self.combined_results_dir, self.single_results_dir = self._create_save_folders(
+                    save_folder_suffix)
+            except FileExistsError:
+                self.reload_results = True
+                LOGGER.warning(
+                    'The save folder already exists. Reloading those results. To recompute choose different save_folder_suffix.'
+                )
 
     def _create_datasets(self) -> Dict[str, data.Dataset]:
         # use same transforms on train split as on val split
@@ -287,6 +294,9 @@ class GradCovarianceAnalyzer(Runner):
 
     def covariance_analysis(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
+        if self.reload_results:
+            return GradCovarianceAnalyzer.reload(self.job, self.save_folder_suffix)
+
         combined_cov_stats = []
         combined_cov_eigvals = []
 
@@ -315,6 +325,22 @@ class GradCovarianceAnalyzer(Runner):
             save_df_dict(df_dict, self.combined_results_dir, self.save_filename)
 
         return combined_cov_stats_df, combined_cov_eigvals_df
+
+    @staticmethod
+    def reload(job: Union[Path, JobResult], save_folder_suffix: str = '') -> Tuple[pd.DataFrame, pd.DataFrame]:
+        if isinstance(job, Path):
+            job = JobResult(job)
+
+        if save_folder_suffix:
+            save_folder_name = f'{GradCovarianceAnalyzer.save_folder_basename}--{save_folder_suffix}'
+        else:
+            save_folder_name = GradCovarianceAnalyzer.save_folder_basename
+
+        df_file_dir = job.directory / save_folder_name / GradCovarianceAnalyzer.save_folder_combined_results
+
+        df_dict = load_df_dict_pickle(dir=df_file_dir, filename_wo_ending=GradCovarianceAnalyzer.save_filename)
+
+        return df_dict['cov_stats'], df_dict['cov_eigvals']
 
     def run(self):
         self.covariance_analysis()
