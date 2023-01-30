@@ -13,7 +13,7 @@ from tqdm import tqdm
 from omegaconf import DictConfig, ListConfig, OmegaConf, open_dict
 from datetime import datetime
 
-from ml_utilities.runner import Runner
+from ml_utilities.run_utils.runner import Runner
 from ml_utilities.output_loader.result_loader import JobResult, SweepResult
 from ml_utilities.time_utils import FORMAT_DATETIME_SHORT
 from ml_utilities.utils import get_device, hyp_param_cfg_to_str, convert_listofdicts_to_dictoflists, setup_logging

@@ -1,7 +1,7 @@
 from typing import Type
 from omegaconf import OmegaConf, DictConfig
 
-from ml_utilities.runner import Runner
+from ml_utilities.run_utils.runner import Runner
 
 from .mode_connectivity.instability_analysis import InstabilityAnalyzer
 from .mode_connectivity.train_instability_analysis import TrainInstabilityAnalysis

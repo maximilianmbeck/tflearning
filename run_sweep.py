@@ -2,7 +2,7 @@ from omegaconf import DictConfig
 from ml_utilities.utils import get_config_file_from_cli, get_config
 from pathlib import Path
 
-from ml_utilities.runner import run_sweep
+from ml_utilities.run_utils.runner import run_sweep
 
 def run(cfg: DictConfig):
     run_sweep(cfg)

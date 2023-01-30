@@ -3,7 +3,7 @@ import copy
 import logging
 from omegaconf import OmegaConf, DictConfig, ListConfig
 from pathlib import Path
-from ml_utilities.runner import Runner, run_job, run_sweep
+from ml_utilities.run_utils.runner import Runner, run_job, run_sweep
 from ml_utilities.trainer import get_trainer_class
 from .instability_analysis import InstabilityAnalyzer
 """This script automates the training for instability analysis."""
