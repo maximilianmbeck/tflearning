@@ -58,7 +58,7 @@ def compute_covariance_gram_spectrum_statistics(input_matrix: torch.Tensor) -> T
     # compute eigenvalues, remember for SPD (symmetric, positive definite) matrices the eigendecomposition is equal to the SVD
     eigvals = torch.linalg.svdvals(cov_gram_matrix)  # these are sorted in descending order
     # eigenspectrum
-    max_eigval = eigvals.max()
+    max_eigval = eigvals[0]
     # smallest non-zero eigenvalue
     min_non_zero_eigval = eigvals[
         n_samples -
