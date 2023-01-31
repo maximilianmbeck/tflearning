@@ -10,7 +10,9 @@ import pandas as pd
 def plot_covariance_statistics(
     cov_stats_df: pd.DataFrame,
     title: str = '',
+    save_format: str = '',
     statistic_names: List[str] = ['max_eigval', 'inverse_condition_number', 'erank'],
+    x_scale: str = 'linear',
     figsize=(3 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)
 ) -> Figure:
     # create figure
@@ -25,9 +27,10 @@ def plot_covariance_statistics(
 
     datasets = list(plot_df.columns.get_level_values('dataset').unique())
 
-
+    handles_per_statistic = {}
     # plot on axes for every statistic
     for ax, statistic_name in zip(axes, statistic_names):
+        handles_per_statistic[statistic_name] = []
         # get all datasets
         for bs_nb, df in plot_df.groupby(level=[0,1]):
             df = df.loc[bs_nb][statistic_name]
@@ -35,12 +38,17 @@ def plot_covariance_statistics(
             for dataset in datasets:
                 x_vals = df[dataset].index.values
                 y_vals = df[dataset].values
-                ax.plot(x_vals, y_vals, label=f'{dataset}--bs={bs},nb={nb}')
+                line, = ax.plot(x_vals, y_vals, label=f'{dataset}--bs={bs},nb={nb}')
+                handles_per_statistic[statistic_name].append(line)
 
         ax.set_title(statistic_name)
         ax.grid(alpha=.3)
         ax.set_xlabel('checkpoint_idx')
+        ax.set_xscale(x_scale)
 
-    # TODO from here add figlegend
+    plt.figlegend(frameon=False, loc='lower left', handles=handles_per_statistic[statistic_names[0]], bbox_to_anchor=(0.9, 0.1))
+    if save_format:
+        assert title
+        f.savefig(f'{title}.{save_format}', dpi=300, bbox_inches='tight')
 
     return f
