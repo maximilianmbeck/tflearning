@@ -11,7 +11,7 @@ from .instability_analysis import InstabilityAnalyzer
 LOGGER = logging.getLogger(__name__)
 
 IA_EXPNAME = 'IA-{stage}-{experiment_name}'
-
+IA_GROUP = 'IA-{experiment_name}'
 
 class TrainInstabilityAnalysis(Runner):
 
@@ -51,6 +51,8 @@ class TrainInstabilityAnalysis(Runner):
             stage='A', experiment_name=self.job_config.experiment_data.experiment_name)
         main_job_cfg.experiment_data.gpu_id = self.gpu_id
         main_job_cfg.trainer.save_every_idxes = self.save_every_idxes
+        main_job_cfg.wandb.init.group = IA_GROUP.format(experiment_name=self.job_config.experiment_data.experiment_name)
+        main_job_cfg.wandb.init.job_type = 'main_training'
 
         runnable_main_job_cfg = OmegaConf.create()
         runnable_main_job_cfg.start_num = self.start_num
@@ -70,6 +72,9 @@ class TrainInstabilityAnalysis(Runner):
         })
         resume_job_cfg.experiment_data.experiment_name = IA_EXPNAME.format(
             stage='B', experiment_name=self.job_config.experiment_data.experiment_name)
+
+        resume_job_cfg.wandb.init.group = IA_GROUP.format(experiment_name=self.job_config.experiment_data.experiment_name)
+        resume_job_cfg.wandb.init.job_type = 'resume_training'
 
         runnable_resume_sweep_cfg = OmegaConf.create()
         runnable_resume_sweep_cfg.run_config = self.run_config
