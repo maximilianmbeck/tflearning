@@ -8,6 +8,9 @@ def run(cfg: DictConfig):
     run_sweep(cfg)
 
 if __name__=='__main__':
+    import wandb
+    wandb.login(host="https://wandb.ml.jku.at")
+    # wandb.login(host="https://api.wandb.ai")
     cfg_file = get_config_file_from_cli(config_folder='configs', script_file=Path(__file__))
     cfg = get_config(cfg_file)
     run(cfg)
