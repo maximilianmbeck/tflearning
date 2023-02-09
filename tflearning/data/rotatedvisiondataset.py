@@ -4,6 +4,7 @@ import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
+from ml_utilities.data.basedataset import BaseDataset
 from ml_utilities.data.torchbuiltindatasets import get_default_normalizer, get_torch_dataset_class
 from ml_utilities.data.data_utils import calculate_dataset_mean_std
 from ml_utilities.utils import convert_dict_to_python_types
@@ -13,7 +14,7 @@ LOGGER = logging.getLogger(__name__)
 NORMALIZER_TYPES = ('none', 'default', 'recompute')
 
 
-class RotatedVisionDataset(data.Dataset): # TODO implement Basedataset (has a normalizer), refactor rotation implementation
+class RotatedVisionDataset(BaseDataset):
 
     def __init__(self,
                  dataset: str,
@@ -42,7 +43,8 @@ class RotatedVisionDataset(data.Dataset): # TODO implement Basedataset (has a no
                 normalizer_ = normalizer_
             else:
                 normalizer_ = get_default_normalizer(self._dataset_name)
-
+        
+        self._normalizer = normalizer_
         if normalizer_:
             self._transforms.append(transforms.Normalize(normalizer_['mean'], normalizer_['std']))
 

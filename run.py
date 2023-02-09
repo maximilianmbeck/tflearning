@@ -3,11 +3,18 @@ from omegaconf import DictConfig
 from ml_utilities.run_utils.runner import run_job
 from ml_utilities.trainer import get_trainer_class
 from ml_utilities.utils import get_config_file_from_cli, get_config
+from tflearning.trainer import CovAnalysisTrainer
 from pathlib import Path
+import logging
 
+LOGGER = logging.getLogger(__name__)
 
 def run(cfg: DictConfig):
-    trainer_class = get_trainer_class(cfg.config.trainer.training_setup)
+    if cfg.config.trainer.training_setup == 'supervised_cov_analysis':
+        LOGGER.info('Using CovAnalysisTrainer')
+        trainer_class = CovAnalysisTrainer
+    else:
+        trainer_class = get_trainer_class(cfg.config.trainer.training_setup)
     run_job(cfg=cfg, trainer_class=trainer_class)
 
 

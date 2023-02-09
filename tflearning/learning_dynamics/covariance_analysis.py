@@ -131,10 +131,9 @@ def gradient_covariance_analysis(model: nn.Module,
     return covariance_stats_per_dataloader, eigvals_per_dataloader
 
 
-# TODO implement function for covariance analysis on single job
-# saves the results in the job directory
-# make this module callable from the command line to perform this job
 class GradCovarianceAnalyzer(Runner):
+
+    """Performs a gradient covariance analysis on checkpoints of a single job."""
 
     save_folder_basename = 'grad_covariance_analysis'
     save_folder_combined_results = 'combined_results'
