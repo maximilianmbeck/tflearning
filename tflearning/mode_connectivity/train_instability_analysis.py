@@ -6,12 +6,14 @@ from pathlib import Path
 from ml_utilities.run_utils.runner import Runner, run_job, run_sweep
 from ml_utilities.trainer import get_trainer_class
 from .instability_analysis import InstabilityAnalyzer
+from .plot import plot_barriers, plot_instability, plot_distances
 """This script automates the training for instability analysis."""
 
 LOGGER = logging.getLogger(__name__)
 
 IA_EXPNAME = 'IA-{stage}-{experiment_name}'
 IA_GROUP = 'IA-{experiment_name}'
+
 
 class TrainInstabilityAnalysis(Runner):
 
@@ -73,7 +75,8 @@ class TrainInstabilityAnalysis(Runner):
         resume_job_cfg.experiment_data.experiment_name = IA_EXPNAME.format(
             stage='B', experiment_name=self.job_config.experiment_data.experiment_name)
 
-        resume_job_cfg.wandb.init.group = IA_GROUP.format(experiment_name=self.job_config.experiment_data.experiment_name)
+        resume_job_cfg.wandb.init.group = IA_GROUP.format(
+            experiment_name=self.job_config.experiment_data.experiment_name)
         resume_job_cfg.wandb.init.job_type = 'resume_training'
 
         runnable_resume_sweep_cfg = OmegaConf.create()
@@ -93,8 +96,8 @@ class TrainInstabilityAnalysis(Runner):
         runnable_ia_cfg.device = self.gpu_id
         runnable_ia_cfg.init_model_idx_k_param_name = self.init_model_idx_k_param_name
         # use two times the training batch size since we are only evaluating
-        runnable_ia_cfg.interpolate_linear_kwargs.update(OmegaConf.create(
-            {'dataloader_kwargs': {
+        runnable_ia_cfg.interpolate_linear_kwargs.update(
+            OmegaConf.create({'dataloader_kwargs': {
                 'batch_size': 2 * self.job_config.trainer.batch_size
             }}))
         return runnable_ia_cfg
@@ -124,4 +127,29 @@ class TrainInstabilityAnalysis(Runner):
             instability_analyzer.run()
         self.runner_dir = self.resume_training_sweep_dir
         LOGGER.info(f'IA STAGE C: Done. Instability analysis can be found in folder: {self.runner_dir}')
+        LOGGER.info(f'IA STAGE D: Plotting.')
+        instability_df = instability_analyzer.combined_results_dfs['datasets'].loc['default_params']
+        distances_df = instability_analyzer.combined_results_dfs['distances'].loc['default_params']
+        LOGGER.info(f'Plotting barriers..')
+        f = plot_barriers(instability_df=instability_df,
+                          title=f'Barriers {instability_analyzer.save_folder_suffix}',
+                          save_dir=instability_analyzer.directory,
+                          save_format='png',
+                          y_label=instability_analyzer.score_fn.__class__.__name__)
+        LOGGER.info(f'Plotting instability..')
+        f = plot_instability(instability_df=instability_df,
+                             title=f'Instability {instability_analyzer.save_folder_suffix} - symlog',
+                             x_scale='symlog',
+                             save_dir=instability_analyzer.directory,
+                             save_format='png')
+        f = plot_instability(instability_df=instability_df,
+                             title=f'Instability {instability_analyzer.save_folder_suffix} - linear',
+                             x_scale='linear',
+                             save_dir=instability_analyzer.directory,
+                             save_format='png')
+        LOGGER.info(f'Plotting distances..')
+        f = plot_distances(distances_df=distances_df,
+                           title=f'Distances {instability_analyzer.save_folder_suffix}',
+                           save_dir=instability_analyzer.directory,
+                           save_format='png')
         LOGGER.info('IA Done.')

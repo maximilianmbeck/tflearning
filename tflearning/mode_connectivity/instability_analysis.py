@@ -117,6 +117,8 @@ class InstabilityAnalyzer(Runner):
         self.instability_sweep = instability_sweep
         super().__init__(runner_dir=instability_sweep.directory)
         self.device = get_device(device)
+        self.save_folder_suffix = save_folder_suffix
+
         self._save_results_to_disc = save_results_to_disc
         self._override_files = override_files
         if save_folder_suffix == '':
