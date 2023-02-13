@@ -10,11 +10,7 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 def run(cfg: DictConfig):
-    if cfg.config.trainer.training_setup == 'supervised_cov_analysis':
-        LOGGER.info('Using CovAnalysisTrainer')
-        trainer_class = CovAnalysisTrainer
-    else:
-        trainer_class = get_trainer_class(cfg.config.trainer.training_setup)
+    trainer_class = get_trainer_class(cfg.config.trainer.training_setup)
     run_job(cfg=cfg, trainer_class=trainer_class)
 
 

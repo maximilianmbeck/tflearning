@@ -75,9 +75,10 @@ class TrainInstabilityAnalysis(Runner):
         resume_job_cfg.experiment_data.experiment_name = IA_EXPNAME.format(
             stage='B', experiment_name=self.job_config.experiment_data.experiment_name)
 
-        resume_job_cfg.wandb.init.group = IA_GROUP.format(
-            experiment_name=self.job_config.experiment_data.experiment_name)
-        resume_job_cfg.wandb.init.job_type = 'resume_training'
+        if resume_job_cfg.get('wandb', None) is not None:
+            resume_job_cfg.wandb.init.group = IA_GROUP.format(
+                experiment_name=self.job_config.experiment_data.experiment_name)
+            resume_job_cfg.wandb.init.job_type = 'resume_training'
 
         runnable_resume_sweep_cfg = OmegaConf.create()
         runnable_resume_sweep_cfg.run_config = self.run_config

@@ -11,5 +11,6 @@ tmp/
 res/f_mnist_pretrained
 configs/
 configs_scripts/
+wandb/
 
 .vscode/**

@@ -4,7 +4,9 @@ import logging
 from omegaconf import DictConfig, OmegaConf
 from tflearning.scripts import ScriptRunner
 from ml_utilities.utils import get_config_file_from_cli, get_config
+
 LOGGER = logging.getLogger(__name__)
+from tflearning.trainer import CovAnalysisTrainer
 
 def run_script(cfg: DictConfig):
     LOGGER.info(f'Running script with config: \n{OmegaConf.to_yaml(cfg)}')
