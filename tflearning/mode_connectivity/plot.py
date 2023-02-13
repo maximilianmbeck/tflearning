@@ -11,7 +11,7 @@ def plot_barriers(
     instability_df: pd.DataFrame,
     title: str = '',
     save_format: str = '',
-    save_dir: str = './',
+    save_dir: str = '.',
     select_interpolate_at_idxes: int = -1,
     y_label: str = 'classification error',
     color_gradient_between: Tuple[str, str] = ('#3e1c70', '#feae7c'),
@@ -63,7 +63,7 @@ def plot_barriers(
 
     if save_format:
         assert title
-        f.savefig(f'{str(save_dir)}{title}.{save_format}', dpi=300, bbox_inches='tight')
+        f.savefig(f'{str(save_dir)}/{title}.{save_format}', dpi=300, bbox_inches='tight')
     return f
 
 
@@ -71,7 +71,7 @@ def plot_instability(instability_df: pd.DataFrame,
                      title: str = '',
                      select_interpolate_at_idxes: int = -1,
                      save_format: str = '',
-                     save_dir: str = './',
+                     save_dir: str = '.',
                      x_scale: str = 'symlog',
                      y_lim: Tuple[float, float] = (-0.05, 1),
                      figsize=(1.5 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54)):
@@ -119,7 +119,7 @@ def plot_instability(instability_df: pd.DataFrame,
 
     if save_format:
         assert title
-        f.savefig(f'{str(save_dir)}{title}.{save_format}', dpi=300, bbox_inches='tight')
+        f.savefig(f'{str(save_dir)}/{title}.{save_format}', dpi=300, bbox_inches='tight')
     return f
 
 
@@ -128,7 +128,7 @@ def plot_distances(distances_df: pd.DataFrame,
                    title: str = '',
                    select_interpolate_at_idxes: int = -1,
                    save_format: str = '',
-                   save_dir: str = './',
+                   save_dir: str = '.',
                    x_scale: str = 'symlog',
                    figsize=(1.5 * 12 * 1 / 2.54, 2 * 8 * 1 / 2.54)):
     assert len(
@@ -179,5 +179,5 @@ def plot_distances(distances_df: pd.DataFrame,
 
     if save_format:
         assert title
-        f.savefig(f'{str(save_dir)}{title}.{save_format}', dpi=300, bbox_inches='tight')
+        f.savefig(f'{str(save_dir)}/{title}.{save_format}', dpi=300, bbox_inches='tight')
     return f
