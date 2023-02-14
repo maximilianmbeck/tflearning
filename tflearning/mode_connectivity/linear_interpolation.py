@@ -21,16 +21,16 @@ LOGGER = logging.getLogger(__name__)
 
 
 def interpolate_linear_runs(
-        run_0: JobResult,
-        run_1: JobResult,
-        score_fn: Union[nn.Module, Metric],
-        model_idx: Union[int, List[int]] = [-1, -2],
-        interpolation_factors: torch.Tensor = torch.linspace(0.0, 1.0, 5),
-        interpolate_linear_kwargs: Dict[str, Any] = {},
-        device: Union[torch.device, str, int] = 'auto',
-        return_dataframe: bool = True,
-        dataset_generator: DatasetGenerator = None
-) -> Union[Dict[str, Any], Tuple[pd.DataFrame, Optional[pd.DataFrame]]]: # TODO pass dataloader here already
+    run_0: JobResult,
+    run_1: JobResult,
+    score_fn: Union[nn.Module, Metric],
+    model_idx: Union[int, List[int]] = [-1, -2],
+    interpolation_factors: torch.Tensor = torch.linspace(0.0, 1.0, 5),
+    interpolate_linear_kwargs: Dict[str, Any] = {},
+    device: Union[torch.device, str, int] = 'auto',
+    return_dataframe: bool = True,
+    dataset_generator: DatasetGenerator = None
+) -> Union[Dict[str, Any], Tuple[pd.DataFrame, Optional[pd.DataFrame]]]:  # TODO pass dataloader here already
     """Interpolate linearly between models of two runs. 
 
     Args:
@@ -63,9 +63,9 @@ def interpolate_linear_runs(
     interpolation_name = run_0.experiment_name + EXP_NAME_DIVIDER + hyp_param_cfg_to_str(run_0.override_hpparams)
     interpolation_seeds = (run_0.experiment_data.seed, run_1.experiment_data.seed)
 
+    data_cfg = copy.deepcopy(run_0.config.config.data)
     if dataset_generator is None:
         # use dataset from run_0 for dataset setup
-        data_cfg = copy.deepcopy(run_0.config.config.data)
         # set training augmentations to the validation augmentations
         with open_dict(data_cfg):
             data_cfg.train_split_transforms = data_cfg.get('val_split_transforms', {})
@@ -77,7 +77,23 @@ def interpolate_linear_runs(
         if not ds_generator.dataset_generated:
             ds_generator.generate_dataset()
 
-    other_datasets = {'val': ds_generator.val_split}
+    train_split = ds_generator.train_split
+    val_split = ds_generator.val_split
+    # use subset of classes if specified
+    use_classes = data_cfg.get('use_classes', None)
+    if use_classes is not None:
+        from ml_utilities.data import get_dataset_label_names
+        from ml_utilities.data.classificationdataset import ClassificationDatasetWrapper
+        LOGGER.debug(f'Using subset of classes: {list(use_classes)}')
+        label_names = get_dataset_label_names(data_cfg.dataset)
+        train_split = ClassificationDatasetWrapper(train_split,
+                                                   label_names=label_names).create_subclassification_dataset(
+                                                       list(use_classes))
+        val_split = ClassificationDatasetWrapper(val_split,
+                                                   label_names=label_names).create_subclassification_dataset(
+                                                       list(use_classes))
+
+    other_datasets = {'val': val_split}
     if 'other_datasets' in interpolate_linear_kwargs:
         other_datasets.update(interpolate_linear_kwargs['other_datasets'])
 
@@ -96,7 +112,7 @@ def interpolate_linear_runs(
                 run_midx = r.highest_model_idx
             else:
                 run_midx = midx
-            
+
             m_idxes.append(run_midx)
             try:
                 m = r.get_model_idx(idx=run_midx, device=device)
@@ -109,7 +125,7 @@ def interpolate_linear_runs(
         idx_res_dict = interpolate_linear(model_0=model_0,
                                           model_1=model_1,
                                           score_fn=score_fn,
-                                          train_dataset=ds_generator.train_split,
+                                          train_dataset=train_split,
                                           interpolation_factors=interpolation_factors,
                                           other_datasets=other_datasets,
                                           **interpolate_linear_kwargs)
@@ -167,23 +183,24 @@ def interpolation_result2series(result_dict: Dict[str, Any]) -> Tuple[pd.Series,
     return dataset_series, distances_series
 
 
-def interpolate_linear(model_0: nn.Module,
-                       model_1: nn.Module,
-                       train_dataset: data.Dataset,
-                       score_fn: Union[nn.Module, Metric],
-                       other_datasets: Dict[str, data.Dataset] = {}, # TODO pass
-                       interpolation_factors: torch.Tensor = torch.linspace(0.0, 1.0, 5),
-                       dataloader_kwargs: Dict[str, Any] = {
-                           'batch_size': 256,
-                           'drop_last': False,
-                           'num_workers': 4,
-                           'persistent_workers': True,
-                           'pin_memory': True
-                       },
-                       compute_model_distances: bool = True,
-                       interpolation_on_train_data: bool = True,
-                       update_bn_statistics: bool = True,
-                       tqdm_desc: str = 'Alphas') -> Dict[str, Any]:
+def interpolate_linear(
+        model_0: nn.Module,
+        model_1: nn.Module,
+        train_dataset: data.Dataset,
+        score_fn: Union[nn.Module, Metric],
+        other_datasets: Dict[str, data.Dataset] = {},  # TODO pass
+        interpolation_factors: torch.Tensor = torch.linspace(0.0, 1.0, 5),
+        dataloader_kwargs: Dict[str, Any] = {
+            'batch_size': 256,
+            'drop_last': False,
+            'num_workers': 4,
+            'persistent_workers': True,
+            'pin_memory': True
+        },
+        compute_model_distances: bool = True,
+        interpolation_on_train_data: bool = True,
+        update_bn_statistics: bool = True,
+        tqdm_desc: str = 'Alphas') -> Dict[str, Any]:
     """Interpolate linearly between two models. Evaluates the performance of each interpolated model on given datasets.
     
     Note:
@@ -226,7 +243,7 @@ def interpolate_linear(model_0: nn.Module,
     assert get_model_device(model_0) == get_model_device(model_1), f'Models to interpolate not on same device!'
     device = get_model_device(model_0)
     assert 'train' not in other_datasets, f'`train` is a reserved dataset name. Please rename this evaluation dataset.'
-    if isinstance(interpolation_factors, list): 
+    if isinstance(interpolation_factors, list):
         interpolation_factors = torch.tensor(interpolation_factors)
     assert interpolation_factors.dim() == 1, '`interpolation_factors` must be tensor of dimension 1.'
     bn_types = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
