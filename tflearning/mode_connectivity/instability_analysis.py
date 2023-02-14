@@ -17,7 +17,7 @@ from ml_utilities.run_utils.runner import Runner
 from ml_utilities.output_loader.result_loader import JobResult, SweepResult
 from ml_utilities.time_utils import FORMAT_DATETIME_SHORT
 from ml_utilities.utils import get_device, hyp_param_cfg_to_str, convert_listofdicts_to_dictoflists, setup_logging
-from ml_utilities.torch_utils.metrics import get_metric, TAccuracy
+from ml_utilities.torch_utils.metrics import get_metric
 from ml_utilities.run_utils.run_handler import EXP_NAME_DIVIDER
 from ml_utilities.output_loader.repo import KEY_CFG_CREATED, KEY_CFG_UPDATED, FORMAT_CFG_DATETIME
 
@@ -53,7 +53,7 @@ class InstabilityAnalyzer(Runner):
         main_training_job (Union[JobResult, str]): The main training run that creates the checkpoints for resuming.
                                                    Provide this for Instability analysis a la Frankle et al. 
         score_fn (Union[nn.Module, Metric, str], optional): The score function for measuring model performance on the datasets. 
-                                                            Defaults to TAccuracy().
+                                                            Defaults to 'TError'.
         interpolation_factors (List[float], optional): List of interpolation factors. Defaults to list(torch.linspace(0.0, 1.0, 5)).
         interpolate_linear_kwargs (Dict[str, Any], optional): Some keyword arguments for `interpolate_linear()`. Defaults to {}.
         init_model_idx_k_param_name (str, optional): The parameter name that specifies the amount of pretraining in the sweep. 
