@@ -358,8 +358,26 @@ class InstabilityAnalyzer(Runner):
         # typically we use augmentations on train data; we do not want to have them for instability analysis on train data
         with open_dict(data_cfg):
             data_cfg.train_split_transforms = data_cfg.get('val_split_transforms', {})
+
         ds_generator = DatasetGenerator(**data_cfg)
         ds_generator.generate_dataset()
+
+        train_split = ds_generator.train_split
+        val_split = ds_generator.val_split
+        # use subset of classes if specified
+        use_classes = data_cfg.get('use_classes', None)
+        if use_classes is not None:
+            from ml_utilities.data import get_dataset_label_names
+            from ml_utilities.data.classificationdataset import ClassificationDatasetWrapper
+            LOGGER.debug(f'Using subset of classes: {list(use_classes)}')
+            label_names = get_dataset_label_names(data_cfg.dataset)
+            train_split = ClassificationDatasetWrapper(train_split,
+                                                       label_names=label_names).create_subclassification_dataset(
+                                                           list(use_classes))
+            val_split = ClassificationDatasetWrapper(val_split,
+                                                       label_names=label_names).create_subclassification_dataset(
+                                                           list(use_classes))
+        datasets = {'train': train_split, 'val': val_split}
 
         dataset_dfs, distance_dfs = {}, {}
         it = run_dict.items()
@@ -390,7 +408,7 @@ class InstabilityAnalyzer(Runner):
                         interpolate_linear_kwargs=self._interpolate_linear_kwargs,
                         device=self.device,
                         return_dataframe=True,
-                        dataset_generator=ds_generator)
+                        datasets=datasets)
                     dataset_dfs[init_model_idx_k].append(interp_result_ds_df)
                     if not interp_result_dist_df is None:
                         distance_dfs[init_model_idx_k].append(interp_result_dist_df)
