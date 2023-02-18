@@ -4,6 +4,7 @@ import logging
 from omegaconf import DictConfig, OmegaConf
 from tflearning.scripts import ScriptRunner
 from ml_utilities.utils import get_config_file_from_cli, get_config
+from tflearning.models.vit_timm import ViTTimm
 
 LOGGER = logging.getLogger(__name__)
 from tflearning.trainer import CovAnalysisTrainer

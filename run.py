@@ -4,6 +4,7 @@ from ml_utilities.run_utils.runner import run_job
 from ml_utilities.trainer import get_trainer_class
 from ml_utilities.utils import get_config_file_from_cli, get_config
 from tflearning.trainer import CovAnalysisTrainer
+from tflearning.models.vit_timm import ViTTimm
 from pathlib import Path
 import logging
 
