@@ -18,10 +18,6 @@ import matplotlib.pyplot as plt
 
 LOGGER = logging.getLogger(__name__)
 
-# take the representation of before the activation
-# for resnet18 and 20 this is
-
-
 class LayerFeatureExtractor(nn.Module):
 
     def __init__(self,
@@ -85,10 +81,11 @@ class PredictionDepth:
                  save_dir: Path = './', 
                  knn_n_neighbors: int = 30,
                  knn_kwargs: Dict[str, Any] = {'n_jobs': 10},
-                 prediction_depth_mode: str = 'model_prediction',
+                 prediction_depth_mode: str = 'last_layer_knn_prediction',
                  features_before: bool = True,
                  append_softmax_output: bool = True,
-                 device: torch.device = None):
+                 device: torch.device = None, 
+                 **kwargs):
 
         self.model = model
         self.layer_names = layer_names
@@ -104,12 +101,13 @@ class PredictionDepth:
         self.knn_n_neighbors = knn_n_neighbors
         self.knn_kwargs = knn_kwargs
         self.prediction_depth_mode = prediction_depth_mode
-
+        
         self.experiment_specifier = experiment_specifier
         self.save_dir = Path(save_dir)
 
         self.num_classes = None
         self.layer_names_ordered = None
+        self.results = None
 
     def _extract_features(self, dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
         feature_batches = []
@@ -179,7 +177,7 @@ class PredictionDepth:
                                    kNN_predictions: Dict[str, np.ndarray],
                                    labels: np.ndarray,
                                    final_predictions: np.ndarray,
-                                   mode: str = 'model_prediction') -> np.ndarray:
+                                   mode: str = 'model_prediction') -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         """Compute prediction depths for each sample.
 
         Args:
@@ -192,23 +190,28 @@ class PredictionDepth:
         Returns:
             np.ndarray: the prediction depth for each sample
         """
-        assert mode in ['model_prediction', 'ground_truth_label'], f"Unknown mode {mode}."
+        assert mode in ['model_prediction', 'ground_truth_label', 'last_layer_knn_prediction'], f"Unknown mode {mode}."
 
         if mode == 'model_prediction':
             compare_labels = final_predictions
         elif mode == 'ground_truth_label':
             compare_labels = labels
+        elif mode == 'last_layer_knn_prediction':
+            compare_labels = kNN_predictions[self.layer_names_ordered[-1]]
         else:
             raise ValueError(f"Unknown mode {mode}")
+        
+        ground_truth_labels = labels
 
         # compute the prediction depth for each sample
         # dim: (n_samples, n_layers)
         layer_preds = np.stack([kNN_predictions[k] for k in kNN_predictions.keys()], axis=1)
 
-        pred_depths = pred_depth_fn(layer_preds, compare_labels)
+        pred_depths_correct, pred_depths_wrong = pred_depth_fn(layer_preds, compare_labels, ground_truth_labels)
+        pred_depths = {'correct': pred_depths_correct, 'wrong': pred_depths_wrong}
         return pred_depths, layer_preds
 
-    def _compute_for_dataloader(self, dataloader: data.DataLoader) -> np.ndarray:
+    def _compute_for_dataloader(self, dataloader: data.DataLoader) -> Tuple[Dict[str, float], np.ndarray, np.ndarray]:
         knn_preds, labels, preds = self._predict_layer_knn(dataloader)
         layer_accs = self._compute_layer_accuracies(knn_preds, labels, preds)
         pred_depths, layer_preds = self._compute_prediction_depths(knn_preds, labels, preds, mode=self.prediction_depth_mode)
@@ -229,23 +232,23 @@ class PredictionDepth:
             LOGGER.info("Computing layer accuracies and prediction depths for val dataset")
             val_layer_accs, val_pred_depths, val_layer_preds = self._compute_for_dataloader(self.val_dataloader)
             ret_dict['val'] = {'layer_accs': val_layer_accs, 'pred_depths': val_pred_depths, 'layer_preds': val_layer_preds}
-        self.pred_depth_results = ret_dict
+        self.results = ret_dict
         return ret_dict
     
     def make_plots(self) -> List[plt.Figure]:
         """Plot the layer accuracies and prediction depths for the train and val dataset."""        
-        self.pred_depth_results = self.compute()
-        return self._make_plots(self.pred_depth_results, save_dir=self.save_dir)
-
+        self.results = self.compute()
+        return self._make_plots(self.results, save_dir=self.save_dir)
 
     def _make_plots(self, pred_depth_results: Dict[str, Dict[str, Any]], save_format: str = 'png', save_dir: Union[Path, str] = './') -> List[plt.Figure]:
         figures = []
         for dataset, res_dict in pred_depth_results.items():
-            f, axes = plt.subplots(1, 2, figsize=(2 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54))
-            f.suptitle(f"Layer accuracies and prediction depths for {dataset} dataset-{self.experiment_specifier}")
+            LOGGER.info(f'Plotting dataset: {dataset}')
+            f, axes = plt.subplots(1, 3, figsize=(3 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54))
+            f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.experiment_specifier}", y=1.05)
             axes.flatten().tolist()
             self._plot_accuracies(axes[0], res_dict['layer_accs'])
-            self._plot_prediction_depths_hist(axes[1], res_dict['pred_depths'])
+            self._plot_prediction_depths_hist(axes[1:], res_dict['pred_depths'])
             figures.append(f)
             if save_format:
                 f.savefig(f'{str(save_dir)}/pred_depth-{self.experiment_specifier}-dataset_{dataset}.{save_format}', dpi=300, bbox_inches='tight')
@@ -258,21 +261,47 @@ class PredictionDepth:
         ax.plot(layer_ind, layer_accs_vals)
         ax.grid(True)
         ax.set_ylim(0.0, 1.0)
-        ax.set_title('kNN layer accuracies')
+        ax.set_title('kNN layer accs')
 
-    def _plot_prediction_depths_hist(self, ax, pred_depths: np.ndarray) -> None:
-        bins = np.arange(-1, len(self.layer_names_ordered)+1, 1) - 0.5
-        ax.hist(pred_depths, bins=bins)
-        x_labels = self.layer_names_ordered.copy()
-        x_labels.insert(0, 'wrong_all')
-        ax.set_xticks(ticks=np.arange(-1, len(self.layer_names_ordered), 1), labels=x_labels, rotation=90)
-        ax.set_xlim(-2.0, len(self.layer_names_ordered))
-        ax.grid(True)
-        ax.set_title(f'Prediction depths - {self.prediction_depth_mode}')
+    def _plot_prediction_depths_hist(self, axes, pred_depths: Dict[str, np.ndarray]) -> None:
+        def plot_hist(ax, pred_depths, title):
+            bins = np.arange(0, len(self.layer_names_ordered)+1, 1) - 0.5
+            ax.hist(pred_depths, bins=bins)
+            x_labels = self.layer_names_ordered.copy()
+            ax.set_xticks(ticks=np.arange(0, len(self.layer_names_ordered), 1), labels=x_labels, rotation=90)
+            ax.set_xlim(-1.0, len(self.layer_names_ordered))
+            ax.grid(True)
+            ax.set_title(title)
+        for ax, (mode, pred_depths) in zip(axes, pred_depths.items()):
+            plot_hist(ax, pred_depths, f'[{mode}] pred depths\n{self.prediction_depth_mode}')
+            LOGGER.info(f'{mode} predicted samples: {np.logical_not(np.isnan(pred_depths)).sum()}')
+
 
 
 # if too slow use numba
-def pred_depth_fn(preds, labels):
+def pred_depth_fn(preds, pred_depth_labels, ground_truth_labels):
+    """Differentiates between correct and wrong predictions and computes the prediction depth."""
+    pred_depths_correct = np.zeros(preds.shape[0])
+    pred_depths_wrong = np.zeros(preds.shape[0])
+    for i in range(preds.shape[0]):
+        for j in reversed(range(preds.shape[1])):
+            if pred_depth_labels[i] == ground_truth_labels[i]:
+                # model prediction is correct
+                if preds[i, j] != pred_depth_labels[i]:
+                    pred_depths_correct[i] = j
+                    break
+                pred_depths_wrong[i] = float('nan')
+            else:
+                # model prediction is wrong
+                if preds[i, j] != pred_depth_labels[i]:
+                    pred_depths_wrong[i] = j
+                    break
+                pred_depths_correct[i] = float('nan')
+    return pred_depths_correct, pred_depths_wrong
+
+# if too slow use numba
+def pred_depth_fn_simple(preds, labels):
+    """This sets prediction depth to -1 if the prediction is wrong for last layer (i.e. 'label' here)."""
     pred_depths = np.zeros(preds.shape[0])
     for i in range(preds.shape[0]):
         for j in reversed(range(preds.shape[1])):

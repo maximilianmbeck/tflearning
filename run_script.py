@@ -1,19 +1,12 @@
 
 from pathlib import Path
-import logging
-from omegaconf import DictConfig, OmegaConf
-from tflearning.scripts import ScriptRunner
 from ml_utilities.utils import get_config_file_from_cli, get_config
+from tflearning.scripts import run_script
 from tflearning.models.vit_timm import ViTTimm
 
-LOGGER = logging.getLogger(__name__)
 from tflearning.trainer import CovAnalysisTrainer
 
-def run_script(cfg: DictConfig):
-    LOGGER.info(f'Running script with config: \n{OmegaConf.to_yaml(cfg)}')
-    cfg = cfg.config
-    script_runner = ScriptRunner(cfg)
-    script_runner.run()
+
 
 if __name__=='__main__':
     cfg_file = get_config_file_from_cli(config_folder='configs_scripts', script_file=Path(__file__))
