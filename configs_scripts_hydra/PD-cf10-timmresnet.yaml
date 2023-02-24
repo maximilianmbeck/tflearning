@@ -22,7 +22,7 @@ config:
       prediction_depth_mode: last_layer_knn_prediction
       append_softmax_output: False
       experiment_specifier: PD-${config.run_script_kwargs.data.dataset}_timmresnet-imagenet
-      gpu_id: 0
+      gpu_id: 1
       layer_names: ['layer1.0.act2','layer1.1.act2','layer2.0.act2','layer2.1.act2','layer3.0.act2','layer3.1.act2','layer4.0.act2','layer4.1.act2','act1']
     
 

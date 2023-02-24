@@ -6,7 +6,7 @@ config:
   run_script_name: prediction_depth
   run_script_kwargs:
     data: 
-      dataset: cifar10
+      dataset: cifar100
       dataset_kwargs:
         data_root_path: /system/user/beck/pwbeck/data
       dataset_split:

@@ -1,0 +1,28 @@
+defaults:
+  - hydra: jobname_outputdir_format
+  - _self_
+
+config:
+  run_script_name: prediction_depth
+  run_script_kwargs:
+    data: 
+      dataset: cifar10
+      dataset_kwargs:
+        data_root_path: /system/user/beck/pwbeck/data
+      dataset_split:
+        train_val_split: 0.9
+        restrict_n_samples_train_task: 10000
+      
+    model:
+      ownjob:
+        job_dir: /system/user/beck/pwbeck/projects/regularization/tflearning/outputs/IA-A-cifar10-17.2.2-resnet-B--230204_215821
+        checkpoint_idx: -1
+
+    prediction_depth:
+      prediction_depth_mode: last_layer_knn_prediction
+      append_softmax_output: False
+      experiment_specifier: PD-${config.run_script_kwargs.data.dataset}-ownresnet-cf10
+      gpu_id: 2
+      layer_names: ['resnet.1.0.0.act2','resnet.1.0.1.act2','resnet.1.0.2.act2','resnet.1.1.0.act2','resnet.1.1.1.act2','resnet.1.1.2.act2','resnet.1.2.0.act2','resnet.1.2.1.act2','resnet.1.2.2.act2','resnet.0.2']
+    
+
