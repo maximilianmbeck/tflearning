@@ -1,15 +1,22 @@
+from pathlib import Path
 import torch
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 from torch import nn
 from torch.utils import data
-
+from sklearn.neighbors import KNeighborsClassifier
+from tqdm import tqdm
 import torch.nn.functional as F
+import logging
+import matplotlib.pyplot as plt
+
 """Implementation of the prediction depth according to [1].
 
 [1] Baldock, Robert J. N., Hartmut Maennel, and Behnam Neyshabur. 2021. “Deep Learning Through the Lens of Example Difficulty.” arXiv. https://doi.org/10.48550/arXiv.2106.09647.
 
 """
+
+LOGGER = logging.getLogger(__name__)
 
 # take the representation of before the activation
 # for resnet18 and 20 this is
@@ -17,11 +24,15 @@ import torch.nn.functional as F
 
 class LayerFeatureExtractor(nn.Module):
 
-    def __init__(self, model: nn.Module, layer_names: List[str], features_before: bool = True):
+    def __init__(self,
+                 model: nn.Module,
+                 layer_names: List[str],
+                 features_before: bool = True,
+                 append_softmax_output: bool = True):
         super().__init__()
         self.model = model
         self.features_before = features_before
-
+        self.append_softmax_output = append_softmax_output
         self.features = []
         self.layer_names_ordered = []
 
@@ -39,15 +50,19 @@ class LayerFeatureExtractor(nn.Module):
             if name in layer_names:
                 module.register_forward_hook(save_features_hook)
                 self.layer_names_ordered.append(name)
+        if self.append_softmax_output:
+            self.layer_names_ordered.append("softmax_output")
+
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         self.features = []
         x = self.model(x)
-        assert len(self.features) == len(
-            self.layer_names_ordered), f"Expected {len(self.layers)} features, got {len(self.features)}"
         feature_dict = {layer: feature for layer, feature in zip(self.layer_names_ordered, self.features)}
         softmax_output = F.softmax(x, dim=1)
-        feature_dict["softmax_output"] = softmax_output.detach()
+        if self.append_softmax_output:
+            feature_dict["softmax_output"] = softmax_output.detach()
+        assert len(feature_dict) == len(
+            self.layer_names_ordered), f"Expected {len(self.layer_names_ordered)} features, got {len(self.features)}"
         return x, feature_dict
 
 
@@ -64,30 +79,43 @@ class PredictionDepth:
     def __init__(self,
                  model: nn.Module,
                  layer_names: List[str],
-                 dataloader: data.DataLoader,
+                 train_dataloader: data.DataLoader,
+                 test_dataloader: data.DataLoader = None,
+                 experiment_specifier: str = '',
+                 save_dir: Path = './', 
+                 knn_n_neighbors: int = 30,
+                 knn_kwargs: Dict[str, Any] = {'n_jobs': 10},
+                 prediction_depth_mode: str = 'model_prediction',
                  features_before: bool = True,
+                 append_softmax_output: bool = True,
                  device: torch.device = None):
 
         self.model = model
         self.layer_names = layer_names
         self.features_before = features_before
-        self.feature_extractor = LayerFeatureExtractor(model, layer_names, features_before)
-        self.dataloader = dataloader
+        self.feature_extractor = LayerFeatureExtractor(model, layer_names, features_before, append_softmax_output=append_softmax_output)
+        self.train_dataloader = train_dataloader
+        self.test_dataloader = test_dataloader
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
         self.feature_extractor.to(device)
 
-        # stores the features for each batch
-        self.layer_features = {}  # type: List[Dict[str, torch.Tensor]]
-        self.labels = []  # type: List[torch.Tensor]
-        self.predictions = []  # type: List[torch.Tensor]
+        self.knn_n_neighbors = knn_n_neighbors
+        self.knn_kwargs = knn_kwargs
+        self.prediction_depth_mode = prediction_depth_mode
 
-    def _extract_features(self):
+        self.experiment_specifier = experiment_specifier
+        self.save_dir = Path(save_dir)
+
+        self.num_classes = None
+        self.layer_names_ordered = None
+
+    def _extract_features(self, dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
         feature_batches = []
         label_batches = []
         prediction_batches = []
-        for x, y in self.dataloader:
+        for x, y in dataloader:
             x, y = x.to(self.device), y.to(self.device)
             pred, feature_dict = self.feature_extractor(x)
 
@@ -101,13 +129,158 @@ class PredictionDepth:
 
         # concatenate the batches
         layer_names = list(feature_batches[0].keys())
-        layer_features = {} # TODO from here
+        layer_features = {}
         for layer_name in layer_names:
-            pass
-        self.feature_batches = {
-            key: np.concatenate([batch[key] for batch in layer_feature_batches
-                                ], axis=0) for feature_batch in self.feature_batches
-        }
-        self.label_batches = np.concatenate(self.label_batches, axis=0)
-        self.prediction_batches = np.concatenate(self.prediction_batches, axis=0)
+            feats = np.concatenate([batch[layer_name] for batch in feature_batches], axis=0)
+            feats = feats.reshape(feats.shape[0], -1)
+            layer_features[layer_name] = feats
 
+        labels = np.concatenate(label_batches, axis=0)
+        predictions = np.concatenate(prediction_batches, axis=0).argmax(axis=-1)
+        if self.num_classes is None:
+            self.num_classes = labels.max() + 1
+        if self.layer_names_ordered is None:
+            self.layer_names_ordered = self.feature_extractor.layer_names_ordered
+        
+        return layer_features, labels, predictions
+
+    def _predict_layer_knn(self,
+                           test_dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
+        #! this needs a lot of memory as the full train and the full test set (including the hidden representations) are stored in memory
+        # extract features train dataset
+        LOGGER.info("Extracting features for train and test dataset")
+        train_features, train_labels, train_predictions = self._extract_features(self.train_dataloader)
+        # extract features
+        test_features, test_labels, test_predictions = self._extract_features(test_dataloader)
+
+        kNN_predictions = {}
+        for layer_name, layer_test_features in tqdm(test_features.items(), desc="Computing kNN predictions"):
+            layer_train_features = train_features[layer_name]
+            # compute kNN predictions
+            knn_classifier = KNeighborsClassifier(n_neighbors=self.knn_n_neighbors, **self.knn_kwargs)
+            # we use the true labels
+            knn_classifier.fit(layer_train_features, train_labels)
+            kNN_predictions[layer_name] = knn_classifier.predict(layer_test_features)
+
+        # output: Dict[str, np.ndarray] containing knn predictions per layer
+        # output: np.ndarray true labes
+        # output: np.ndarray predicted labels
+        return kNN_predictions, test_labels, test_predictions
+
+    def _compute_layer_accuracies(self, kNN_predictions: Dict[str, np.ndarray], labels: np.ndarray,
+                                  final_predictions: np.ndarray) -> Dict[str, float]:
+        layer_accuracies = {}
+        for layer_name, layer_predictions in kNN_predictions.items():
+            layer_accuracies[layer_name] = np.mean(layer_predictions == labels)
+        layer_accuracies["model_preds"] = np.mean(final_predictions == labels)
+        return layer_accuracies
+
+    def _compute_prediction_depths(self,
+                                   kNN_predictions: Dict[str, np.ndarray],
+                                   labels: np.ndarray,
+                                   final_predictions: np.ndarray,
+                                   mode: str = 'model_prediction') -> np.ndarray:
+        """Compute prediction depths for each sample.
+
+        Args:
+            kNN_predictions (Dict[str, np.ndarray]): _description_
+            labels (np.ndarray): _description_
+            final_predictions (np.ndarray): _description_
+            mode (str): model_prediction: use the models prediction for assigning the prediction depth
+                        ground_truth_label: use the true label for assigning the prediction depth
+
+        Returns:
+            np.ndarray: the prediction depth for each sample
+        """
+        assert mode in ['model_prediction', 'ground_truth_label'], f"Unknown mode {mode}."
+
+        if mode == 'model_prediction':
+            compare_labels = final_predictions
+        elif mode == 'ground_truth_label':
+            compare_labels = labels
+        else:
+            raise ValueError(f"Unknown mode {mode}")
+
+        # compute the prediction depth for each sample
+        # dim: (n_samples, n_layers)
+        layer_preds = np.stack([kNN_predictions[k] for k in kNN_predictions.keys()], axis=1)
+
+        pred_depths = pred_depth_fn(layer_preds, compare_labels)
+        return pred_depths, layer_preds
+
+    def _compute_for_dataloader(self, dataloader: data.DataLoader) -> np.ndarray:
+        knn_preds, labels, preds = self._predict_layer_knn(dataloader)
+        layer_accs = self._compute_layer_accuracies(knn_preds, labels, preds)
+        pred_depths, layer_preds = self._compute_prediction_depths(knn_preds, labels, preds, mode=self.prediction_depth_mode)
+
+        return layer_accs, pred_depths, layer_preds
+
+    def compute(self) -> Tuple[Dict[str, float], np.ndarray]:
+        """Compute the layer accuracies and the prediction depths for the train and test dataset.
+
+        Returns:
+            Tuple[Dict[str, float], np.ndarray]: layer accuracies and prediction depths
+        """
+        ret_dict = {}
+        LOGGER.info("Computing layer accuracies and prediction depths for train dataset")
+        train_layer_accs, train_pred_depths, train_layer_preds = self._compute_for_dataloader(self.train_dataloader)
+        ret_dict['train'] = {'layer_accs': train_layer_accs, 'pred_depths': train_pred_depths, 'layer_preds': train_layer_preds}
+        if self.test_dataloader is not None:
+            LOGGER.info("Computing layer accuracies and prediction depths for test dataset")
+            test_layer_accs, test_pred_depths, test_layer_preds = self._compute_for_dataloader(self.test_dataloader)
+            ret_dict['test'] = {'layer_accs': test_layer_accs, 'pred_depths': test_pred_depths, 'layer_preds': test_layer_preds}
+        self.pred_depth_results = ret_dict
+        return ret_dict
+    
+    def make_plots(self) -> List[plt.Figure]:
+        """Plot the layer accuracies and prediction depths for the train and test dataset."""        
+        self.pred_depth_results = self.compute()
+        return self._make_plots(self.pred_depth_results, save_dir=self.save_dir)
+
+
+    def _make_plots(self, pred_depth_results: Dict[str, Dict[str, Any]], save_format: str = 'png', save_dir: Union[Path, str] = './') -> List[plt.Figure]:
+        figures = []
+        for dataset, res_dict in pred_depth_results.items():
+            f, axes = plt.subplots(1, 2, figsize=(2 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54))
+            f.suptitle(f"Layer accuracies and prediction depths for {dataset} dataset")
+            axes.flatten().tolist()
+            self._plot_accuracies(axes[0], res_dict['layer_accs'])
+            self._plot_prediction_depths_hist(axes[1], res_dict['pred_depths'])
+            figures.append(f)
+            if save_format:
+                f.savefig(f'{str(save_dir)}/pred_depth-{self.experiment_specifier}-dataset_{dataset}.{save_format}', dpi=300, bbox_inches='tight')
+        return figures
+
+    def _plot_accuracies(self, ax, layer_accs: Dict[str, float]) -> None:
+        model_pred_acc = layer_accs.pop('model_preds', -1)
+        layer_accs_vals = np.array(list(layer_accs.values()))
+        layer_ind = np.arange(len(layer_accs_vals))
+        ax.plot(layer_ind, layer_accs_vals)
+        ax.grid(True)
+        ax.set_ylim(0.0, 1.0)
+        ax.set_title('kNN layer accuracies')
+
+    def _plot_prediction_depths_hist(self, ax, pred_depths: np.ndarray) -> None:
+        bins = np.arange(-1, len(self.layer_names_ordered)+1, 1) - 0.5
+        ax.hist(pred_depths, bins=bins)
+        x_labels = self.layer_names_ordered.copy()
+        x_labels.insert(0, 'wrong_all')
+        ax.set_xticks(ticks=np.arange(-1, len(self.layer_names_ordered), 1), labels=x_labels, rotation=90)
+        ax.set_xlim(-2.0, len(self.layer_names_ordered))
+        ax.grid(True)
+        ax.set_title(f'Prediction depths - {self.prediction_depth_mode}')
+
+
+# if too slow use numba
+def pred_depth_fn(preds, labels):
+    pred_depths = np.zeros(preds.shape[0])
+    for i in range(preds.shape[0]):
+        for j in reversed(range(preds.shape[1])):
+            if j == preds.shape[1]-1:
+                if preds[i, j] != labels[i]:
+                    pred_depths[i] = -1
+                    break
+            if preds[i, j] != labels[i]:
+                pred_depths[i] = j
+                break
+    return pred_depths
