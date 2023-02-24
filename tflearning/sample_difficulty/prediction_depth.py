@@ -80,7 +80,7 @@ class PredictionDepth:
                  model: nn.Module,
                  layer_names: List[str],
                  train_dataloader: data.DataLoader,
-                 test_dataloader: data.DataLoader = None,
+                 val_dataloader: data.DataLoader = None,
                  experiment_specifier: str = '',
                  save_dir: Path = './', 
                  knn_n_neighbors: int = 30,
@@ -95,7 +95,7 @@ class PredictionDepth:
         self.features_before = features_before
         self.feature_extractor = LayerFeatureExtractor(model, layer_names, features_before, append_softmax_output=append_softmax_output)
         self.train_dataloader = train_dataloader
-        self.test_dataloader = test_dataloader
+        self.val_dataloader = val_dataloader
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
@@ -145,27 +145,27 @@ class PredictionDepth:
         return layer_features, labels, predictions
 
     def _predict_layer_knn(self,
-                           test_dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
-        #! this needs a lot of memory as the full train and the full test set (including the hidden representations) are stored in memory
+                           val_dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
+        #! this needs a lot of memory as the full train and the full val set (including the hidden representations) are stored in memory
         # extract features train dataset
-        LOGGER.info("Extracting features for train and test dataset")
+        LOGGER.info("Extracting features for train and val dataset")
         train_features, train_labels, train_predictions = self._extract_features(self.train_dataloader)
         # extract features
-        test_features, test_labels, test_predictions = self._extract_features(test_dataloader)
+        val_features, val_labels, val_predictions = self._extract_features(val_dataloader)
 
         kNN_predictions = {}
-        for layer_name, layer_test_features in tqdm(test_features.items(), desc="Computing kNN predictions"):
+        for layer_name, layer_val_features in tqdm(val_features.items(), desc="Computing kNN predictions"):
             layer_train_features = train_features[layer_name]
             # compute kNN predictions
             knn_classifier = KNeighborsClassifier(n_neighbors=self.knn_n_neighbors, **self.knn_kwargs)
             # we use the true labels
             knn_classifier.fit(layer_train_features, train_labels)
-            kNN_predictions[layer_name] = knn_classifier.predict(layer_test_features)
+            kNN_predictions[layer_name] = knn_classifier.predict(layer_val_features)
 
         # output: Dict[str, np.ndarray] containing knn predictions per layer
         # output: np.ndarray true labes
         # output: np.ndarray predicted labels
-        return kNN_predictions, test_labels, test_predictions
+        return kNN_predictions, val_labels, val_predictions
 
     def _compute_layer_accuracies(self, kNN_predictions: Dict[str, np.ndarray], labels: np.ndarray,
                                   final_predictions: np.ndarray) -> Dict[str, float]:
@@ -216,7 +216,7 @@ class PredictionDepth:
         return layer_accs, pred_depths, layer_preds
 
     def compute(self) -> Tuple[Dict[str, float], np.ndarray]:
-        """Compute the layer accuracies and the prediction depths for the train and test dataset.
+        """Compute the layer accuracies and the prediction depths for the train and val dataset.
 
         Returns:
             Tuple[Dict[str, float], np.ndarray]: layer accuracies and prediction depths
@@ -225,15 +225,15 @@ class PredictionDepth:
         LOGGER.info("Computing layer accuracies and prediction depths for train dataset")
         train_layer_accs, train_pred_depths, train_layer_preds = self._compute_for_dataloader(self.train_dataloader)
         ret_dict['train'] = {'layer_accs': train_layer_accs, 'pred_depths': train_pred_depths, 'layer_preds': train_layer_preds}
-        if self.test_dataloader is not None:
-            LOGGER.info("Computing layer accuracies and prediction depths for test dataset")
-            test_layer_accs, test_pred_depths, test_layer_preds = self._compute_for_dataloader(self.test_dataloader)
-            ret_dict['test'] = {'layer_accs': test_layer_accs, 'pred_depths': test_pred_depths, 'layer_preds': test_layer_preds}
+        if self.val_dataloader is not None:
+            LOGGER.info("Computing layer accuracies and prediction depths for val dataset")
+            val_layer_accs, val_pred_depths, val_layer_preds = self._compute_for_dataloader(self.val_dataloader)
+            ret_dict['val'] = {'layer_accs': val_layer_accs, 'pred_depths': val_pred_depths, 'layer_preds': val_layer_preds}
         self.pred_depth_results = ret_dict
         return ret_dict
     
     def make_plots(self) -> List[plt.Figure]:
-        """Plot the layer accuracies and prediction depths for the train and test dataset."""        
+        """Plot the layer accuracies and prediction depths for the train and val dataset."""        
         self.pred_depth_results = self.compute()
         return self._make_plots(self.pred_depth_results, save_dir=self.save_dir)
 
@@ -242,7 +242,7 @@ class PredictionDepth:
         figures = []
         for dataset, res_dict in pred_depth_results.items():
             f, axes = plt.subplots(1, 2, figsize=(2 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54))
-            f.suptitle(f"Layer accuracies and prediction depths for {dataset} dataset")
+            f.suptitle(f"Layer accuracies and prediction depths for {dataset} dataset-{self.experiment_specifier}")
             axes.flatten().tolist()
             self._plot_accuracies(axes[0], res_dict['layer_accs'])
             self._plot_prediction_depths_hist(axes[1], res_dict['pred_depths'])
