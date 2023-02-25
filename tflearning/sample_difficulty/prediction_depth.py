@@ -1,5 +1,6 @@
 from pathlib import Path
 import torch
+import wandb
 import numpy as np
 from typing import Any, Dict, List, Tuple, Union
 from torch import nn
@@ -9,7 +10,6 @@ from tqdm import tqdm
 import torch.nn.functional as F
 import logging
 import matplotlib.pyplot as plt
-
 """Implementation of the prediction depth according to [1].
 
 [1] Baldock, Robert J. N., Hartmut Maennel, and Behnam Neyshabur. 2021. “Deep Learning Through the Lens of Example Difficulty.” arXiv. https://doi.org/10.48550/arXiv.2106.09647.
@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 """
 
 LOGGER = logging.getLogger(__name__)
+
 
 class LayerFeatureExtractor(nn.Module):
 
@@ -49,7 +50,6 @@ class LayerFeatureExtractor(nn.Module):
         if self.append_softmax_output:
             self.layer_names_ordered.append("softmax_output")
 
-
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         self.features = []
         x = self.model(x)
@@ -78,19 +78,23 @@ class PredictionDepth:
                  train_dataloader: data.DataLoader,
                  val_dataloader: data.DataLoader = None,
                  experiment_specifier: str = '',
-                 save_dir: Path = './', 
+                 save_dir: Path = './',
                  knn_n_neighbors: int = 30,
                  knn_kwargs: Dict[str, Any] = {'n_jobs': 10},
                  prediction_depth_mode: str = 'last_layer_knn_prediction',
                  features_before: bool = True,
                  append_softmax_output: bool = True,
-                 device: torch.device = None, 
+                 device: torch.device = None,
+                 wandb_run=None,
                  **kwargs):
 
         self.model = model
         self.layer_names = layer_names
         self.features_before = features_before
-        self.feature_extractor = LayerFeatureExtractor(model, layer_names, features_before, append_softmax_output=append_softmax_output)
+        self.feature_extractor = LayerFeatureExtractor(model,
+                                                       layer_names,
+                                                       features_before,
+                                                       append_softmax_output=append_softmax_output)
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         if device is None:
@@ -101,9 +105,10 @@ class PredictionDepth:
         self.knn_n_neighbors = knn_n_neighbors
         self.knn_kwargs = knn_kwargs
         self.prediction_depth_mode = prediction_depth_mode
-        
+
         self.experiment_specifier = experiment_specifier
         self.save_dir = Path(save_dir)
+        self.wandb_run = wandb_run
 
         self.num_classes = None
         self.layer_names_ordered = None
@@ -139,7 +144,7 @@ class PredictionDepth:
             self.num_classes = labels.max() + 1
         if self.layer_names_ordered is None:
             self.layer_names_ordered = self.feature_extractor.layer_names_ordered
-        
+
         return layer_features, labels, predictions
 
     def _predict_layer_knn(self,
@@ -200,7 +205,7 @@ class PredictionDepth:
             compare_labels = kNN_predictions[self.layer_names_ordered[-1]]
         else:
             raise ValueError(f"Unknown mode {mode}")
-        
+
         ground_truth_labels = labels
 
         # compute the prediction depth for each sample
@@ -214,7 +219,10 @@ class PredictionDepth:
     def _compute_for_dataloader(self, dataloader: data.DataLoader) -> Tuple[Dict[str, float], np.ndarray, np.ndarray]:
         knn_preds, labels, preds = self._predict_layer_knn(dataloader)
         layer_accs = self._compute_layer_accuracies(knn_preds, labels, preds)
-        pred_depths, layer_preds = self._compute_prediction_depths(knn_preds, labels, preds, mode=self.prediction_depth_mode)
+        pred_depths, layer_preds = self._compute_prediction_depths(knn_preds,
+                                                                   labels,
+                                                                   preds,
+                                                                   mode=self.prediction_depth_mode)
 
         return layer_accs, pred_depths, layer_preds
 
@@ -227,20 +235,31 @@ class PredictionDepth:
         ret_dict = {}
         LOGGER.info("Computing layer accuracies and prediction depths for train dataset")
         train_layer_accs, train_pred_depths, train_layer_preds = self._compute_for_dataloader(self.train_dataloader)
-        ret_dict['train'] = {'layer_accs': train_layer_accs, 'pred_depths': train_pred_depths, 'layer_preds': train_layer_preds}
+        ret_dict['train'] = {
+            'layer_accs': train_layer_accs,
+            'pred_depths': train_pred_depths,
+            'layer_preds': train_layer_preds
+        }
         if self.val_dataloader is not None:
             LOGGER.info("Computing layer accuracies and prediction depths for val dataset")
             val_layer_accs, val_pred_depths, val_layer_preds = self._compute_for_dataloader(self.val_dataloader)
-            ret_dict['val'] = {'layer_accs': val_layer_accs, 'pred_depths': val_pred_depths, 'layer_preds': val_layer_preds}
+            ret_dict['val'] = {
+                'layer_accs': val_layer_accs,
+                'pred_depths': val_pred_depths,
+                'layer_preds': val_layer_preds
+            }
         self.results = ret_dict
         return ret_dict
-    
+
     def make_plots(self) -> List[plt.Figure]:
-        """Plot the layer accuracies and prediction depths for the train and val dataset."""        
+        """Plot the layer accuracies and prediction depths for the train and val dataset."""
         self.results = self.compute()
         return self._make_plots(self.results, save_dir=self.save_dir)
 
-    def _make_plots(self, pred_depth_results: Dict[str, Dict[str, Any]], save_format: str = 'png', save_dir: Union[Path, str] = './') -> List[plt.Figure]:
+    def _make_plots(self,
+                    pred_depth_results: Dict[str, Dict[str, Any]],
+                    save_format: str = 'png',
+                    save_dir: Union[Path, str] = './') -> List[plt.Figure]:
         figures = []
         for dataset, res_dict in pred_depth_results.items():
             LOGGER.info(f'Plotting dataset: {dataset}')
@@ -248,10 +267,12 @@ class PredictionDepth:
             f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.experiment_specifier}", y=1.05)
             axes.flatten().tolist()
             self._plot_accuracies(axes[0], res_dict['layer_accs'])
-            self._plot_prediction_depths_hist(axes[1:], res_dict['pred_depths'])
+            self._plot_prediction_depths_hist(axes[1:], res_dict['pred_depths'], dataset)
             figures.append(f)
             if save_format:
-                f.savefig(f'{str(save_dir)}/pred_depth-{self.experiment_specifier}-dataset_{dataset}.{save_format}', dpi=300, bbox_inches='tight')
+                f.savefig(f'{str(save_dir)}/pred_depth-{self.experiment_specifier}-dataset_{dataset}.{save_format}',
+                          dpi=300,
+                          bbox_inches='tight')
         return figures
 
     def _plot_accuracies(self, ax, layer_accs: Dict[str, float]) -> None:
@@ -262,20 +283,34 @@ class PredictionDepth:
         ax.grid(True)
         ax.set_ylim(0.0, 1.0)
         ax.set_title('kNN layer accs')
+        if self.wandb_run is not None:
+            tbl_data = [[layer, acc] for layer, acc in zip(layer_ind, layer_accs_vals)]
+            tbl = wandb.Table(data=tbl_data, columns=['layer', 'acc'])
+            wandb.log({f'kNN layer accs': wandb.plot.line(tbl, x='layer', y='acc', title='kNN layer accs')})
 
-    def _plot_prediction_depths_hist(self, axes, pred_depths: Dict[str, np.ndarray]) -> None:
+    def _plot_prediction_depths_hist(self, axes, pred_depths: Dict[str, np.ndarray], dataset: str='') -> None:
+
         def plot_hist(ax, pred_depths, title):
-            bins = np.arange(0, len(self.layer_names_ordered)+1, 1) - 0.5
+            bins = np.arange(0, len(self.layer_names_ordered) + 1, 1) - 0.5
             ax.hist(pred_depths, bins=bins)
             x_labels = self.layer_names_ordered.copy()
             ax.set_xticks(ticks=np.arange(0, len(self.layer_names_ordered), 1), labels=x_labels, rotation=90)
             ax.set_xlim(-1.0, len(self.layer_names_ordered))
             ax.grid(True)
             ax.set_title(title)
+            if self.wandb_run is not None:
+                hist, bin_edges = np.histogram(pred_depths, bins=bins)
+                sample_count = hist.tolist()
+                pred_depth = np.arange(0, len(self.layer_names_ordered) + 1, 1).tolist()
+                tbl_data = [[pd, sc] for pd, sc in zip(pred_depth, sample_count)]
+                tbl = wandb.Table(data=tbl_data, columns=['pred_depth', 'sample_count'])
+                wandb.log(
+                    {f'{title}': wandb.plot.bar(table=tbl, label='pred_depth', value='sample_count', title=title)})
+
         for ax, (mode, pred_depths) in zip(axes, pred_depths.items()):
             plot_hist(ax, pred_depths, f'[{mode}] pred depths\n{self.prediction_depth_mode}')
+            wandb.log({f'{dataset}-{mode} samples': np.logical_not(np.isnan(pred_depths)).sum()})
             LOGGER.info(f'{mode} predicted samples: {np.logical_not(np.isnan(pred_depths)).sum()}')
-
 
 
 # if too slow use numba
@@ -299,13 +334,14 @@ def pred_depth_fn(preds, pred_depth_labels, ground_truth_labels):
                 pred_depths_correct[i] = float('nan')
     return pred_depths_correct, pred_depths_wrong
 
+
 # if too slow use numba
 def pred_depth_fn_simple(preds, labels):
     """This sets prediction depth to -1 if the prediction is wrong for last layer (i.e. 'label' here)."""
     pred_depths = np.zeros(preds.shape[0])
     for i in range(preds.shape[0]):
         for j in reversed(range(preds.shape[1])):
-            if j == preds.shape[1]-1:
+            if j == preds.shape[1] - 1:
                 if preds[i, j] != labels[i]:
                     pred_depths[i] = -1
                     break

@@ -5,6 +5,17 @@ defaults:
 config:
   run_script_name: prediction_depth
   run_script_kwargs:
+    experiment_data:
+      entity: fslgroup
+      project_name: tflearning
+      experiment_tag: 'timmresnet'
+      experiment_type: ${config.run_script_kwargs.data.dataset}
+      experiment_name: PD-${config.run_script_kwargs.data.dataset}_timmresnet-imagenet
+      experiment_dir: null
+      experiment_notes: 
+      seed: 0
+      gpu_id: 1
+
     data: 
       dataset: cifar10
       dataset_kwargs:
@@ -21,8 +32,6 @@ config:
     prediction_depth:
       prediction_depth_mode: last_layer_knn_prediction
       append_softmax_output: False
-      experiment_specifier: PD-${config.run_script_kwargs.data.dataset}_timmresnet-imagenet
-      gpu_id: 1
       layer_names: ['layer1.0.act2','layer1.1.act2','layer2.0.act2','layer2.1.act2','layer3.0.act2','layer3.1.act2','layer4.0.act2','layer4.1.act2','act1']
     
 

@@ -5,8 +5,19 @@ defaults:
 config:
   run_script_name: prediction_depth
   run_script_kwargs:
+    experiment_data:
+      entity: fslgroup
+      project_name: tflearning
+      experiment_tag: 'ownresnet'
+      experiment_type: ${config.run_script_kwargs.data.dataset}
+      experiment_name: PD-${config.run_script_kwargs.data.dataset}_timmresnet-imagenet
+      experiment_dir: null
+      experiment_notes: 
+      seed: 0
+      gpu_id: 1
+
     data: 
-      dataset: cifar10
+      dataset: cifar100
       dataset_kwargs:
         data_root_path: /system/user/beck/pwbeck/data
       dataset_split:
@@ -22,7 +33,4 @@ config:
       prediction_depth_mode: last_layer_knn_prediction
       append_softmax_output: False
       experiment_specifier: PD-${config.run_script_kwargs.data.dataset}-ownresnet-cf10
-      gpu_id: 2
       layer_names: ['resnet.1.0.0.act2','resnet.1.0.1.act2','resnet.1.0.2.act2','resnet.1.1.0.act2','resnet.1.1.1.act2','resnet.1.1.2.act2','resnet.1.2.0.act2','resnet.1.2.1.act2','resnet.1.2.2.act2','resnet.0.2']
-    
-
