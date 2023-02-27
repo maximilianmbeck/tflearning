@@ -1,10 +1,10 @@
 from omegaconf import DictConfig
 import hydra
 from tflearning.scripts import run_script
-from tflearning.models.vit_timm import ViTTimm
-from tflearning.trainer import CovAnalysisTrainer
+
 import logging
 from pathlib import Path
+import tflearning
 
 LOGGER = logging.getLogger(__name__)
 

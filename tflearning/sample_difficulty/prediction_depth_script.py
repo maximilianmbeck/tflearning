@@ -28,7 +28,10 @@ class PredictionDepthRunner(Runner):
         train = ds_gen.train_split
         val = ds_gen.val_split
         trainloader = DataLoader(train, batch_size=128, shuffle=False)
-        valloader = DataLoader(val, batch_size=128, shuffle=False)
+        if len(val) > 0:
+            valloader = DataLoader(val, batch_size=128, shuffle=False)
+        else:
+            valloader = None
         
         ## model
         timm_cfg = self.model_cfg.get('timm', None)

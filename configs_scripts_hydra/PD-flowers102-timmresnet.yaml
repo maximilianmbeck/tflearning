@@ -1,0 +1,37 @@
+defaults:
+  - hydra: jobname_outputdir_format
+  - _self_
+
+config:
+  run_script_name: prediction_depth
+  run_script_kwargs:
+    experiment_data:
+      entity: fslgroup
+      project_name: tflearning
+      experiment_tag: 'timmresnet'
+      experiment_type: ${config.run_script_kwargs.data.dataset}
+      experiment_name: PD-${config.run_script_kwargs.data.dataset}_timmresnet-imagenet
+      experiment_dir: null
+      experiment_notes: 
+      seed: 0
+      gpu_id: 0
+
+    data: 
+      dataset: Flowers102
+      dataset_kwargs:
+        data_root_path: /local00/bioinf/beck/data #/system/user/beck/pwbeck/data
+      dataset_split:
+        train_val_split: 1.0
+        restrict_n_samples_train_task: 1000
+      
+    model:
+      timm:
+        model_name: resnet18
+        pretrained: True
+
+    prediction_depth:
+      prediction_depth_mode: last_layer_knn_prediction
+      append_softmax_output: False
+      layer_names: ['layer1.0.act2','layer1.1.act2','layer2.0.act2','layer2.1.act2','layer3.0.act2','layer3.1.act2','layer4.0.act2','layer4.1.act2','act1']
+    
+

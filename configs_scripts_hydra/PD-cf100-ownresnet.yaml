@@ -14,7 +14,7 @@ config:
       experiment_dir: null
       experiment_notes: 
       seed: 0
-      gpu_id: 1
+      gpu_id: 2
 
     data: 
       dataset: cifar100
