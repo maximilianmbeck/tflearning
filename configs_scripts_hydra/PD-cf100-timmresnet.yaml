@@ -14,15 +14,15 @@ config:
       experiment_dir: null
       experiment_notes: 
       seed: 0
-      gpu_id: 1
+      gpu_id: 0
 
     data: 
       dataset: cifar100
       dataset_kwargs:
         data_root_path: /system/user/beck/pwbeck/data
       dataset_split:
-        train_val_split: 0.9
-        restrict_n_samples_train_task: 10000
+        train_val_split: 1.0 #0.9
+        restrict_n_samples_train_task: 1000 #10000
       
     model:
       timm:

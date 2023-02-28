@@ -2,9 +2,7 @@
 from pathlib import Path
 from ml_utilities.utils import get_config_file_from_cli, get_config
 from tflearning.scripts import run_script
-from tflearning.models.vit_timm import ViTTimm
-
-from tflearning.trainer import CovAnalysisTrainer
+import tflearning
 
 
 

@@ -10,7 +10,7 @@ from ml_utilities.torch_utils import gradients_to_vector
 from ml_utilities.trainer.supervisedbasetrainer import SupervisedBaseTrainer
 from ml_utilities.trainer import register_trainer
 from ml_utilities.utils import flatten_hierarchical_dict
-from .learning_dynamics.covariance_analysis import gradient_covariance_analysis
+from ..learning_dynamics.covariance_analysis import gradient_covariance_analysis
 
 class CovAnalysisTrainer(SupervisedBaseTrainer):
 
