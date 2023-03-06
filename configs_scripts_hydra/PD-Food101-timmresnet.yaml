@@ -19,7 +19,7 @@ config:
     data: 
       dataset: Food101
       dataset_kwargs:
-        data_root_path: /local00/bioinf/beck/data #/system/user/beck/pwbeck/data
+        data_root_path: /system/user/beck/pwbeck/data #/local00/bioinf/beck/data #
       dataset_split:
         train_val_split: 1.0
         restrict_n_samples_train_task: 1000
