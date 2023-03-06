@@ -10,6 +10,7 @@ from tqdm import tqdm
 import torch.nn.functional as F
 import logging
 import matplotlib.pyplot as plt
+
 """Implementation of the prediction depth according to [1].
 
 [1] Baldock, Robert J. N., Hartmut Maennel, and Behnam Neyshabur. 2021. “Deep Learning Through the Lens of Example Difficulty.” arXiv. https://doi.org/10.48550/arXiv.2106.09647.
@@ -51,14 +52,15 @@ class LayerFeatureExtractor(nn.Module):
             self.layer_names_ordered.append("softmax_output")
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        self.features = []
-        x = self.model(x)
-        feature_dict = {layer: feature for layer, feature in zip(self.layer_names_ordered, self.features)}
-        softmax_output = F.softmax(x, dim=1)
-        if self.append_softmax_output:
-            feature_dict["softmax_output"] = softmax_output.detach()
-        assert len(feature_dict) == len(
-            self.layer_names_ordered), f"Expected {len(self.layer_names_ordered)} features, got {len(self.features)}"
+        with torch.no_grad():
+            self.features = []
+            x = self.model(x)
+            feature_dict = {layer: feature for layer, feature in zip(self.layer_names_ordered, self.features)}
+            softmax_output = F.softmax(x, dim=1)
+            if self.append_softmax_output:
+                feature_dict["softmax_output"] = softmax_output.detach()
+            assert len(feature_dict) == len(
+                self.layer_names_ordered), f"Expected {len(self.layer_names_ordered)} features, got {len(self.features)}"
         return x, feature_dict
 
 
@@ -84,6 +86,7 @@ class PredictionDepth:
                  prediction_depth_mode: str = 'last_layer_knn_prediction',
                  features_before: bool = True,
                  append_softmax_output: bool = True,
+                 update_bn_statistics: bool = False,
                  device: torch.device = None,
                  wandb_run=None,
                  **kwargs):
@@ -91,15 +94,22 @@ class PredictionDepth:
         self.model = model
         self.layer_names = layer_names
         self.features_before = features_before
-        self.feature_extractor = LayerFeatureExtractor(model,
-                                                       layer_names,
-                                                       features_before,
-                                                       append_softmax_output=append_softmax_output)
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
+        # update model batchnorm statistics
+        self.model.to(device=self.device)
+        self.model.eval()
+        if update_bn_statistics:
+            LOGGER.info('Updating batchnorm statistics')
+            torch.optim.swa_utils.update_bn(train_dataloader, self.model, device=self.device)
+
+        self.feature_extractor = LayerFeatureExtractor(model,
+                                                       layer_names,
+                                                       features_before,
+                                                       append_softmax_output=append_softmax_output)
         self.feature_extractor.to(device)
 
         self.knn_n_neighbors = knn_n_neighbors
@@ -118,6 +128,7 @@ class PredictionDepth:
         feature_batches = []
         label_batches = []
         prediction_batches = []
+        self.feature_extractor.eval()
         for x, y in dataloader:
             x, y = x.to(self.device), y.to(self.device)
             pred, feature_dict = self.feature_extractor(x)
