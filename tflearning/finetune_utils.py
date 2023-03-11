@@ -29,6 +29,7 @@ def freeze_layers_before(model: nn.Module, layer_name: str) -> nn.Module:
     return model
 
 def adapt_last_linear_layer(model: nn.Module, num_output_logits: int) -> nn.Module:
+    """Adapt the last linear layer of the model to the given number of output logits."""
     module_list = list(model.named_modules())
     last_layer_name, last_layer = module_list[-1]
     if not isinstance(last_layer, nn.Linear):

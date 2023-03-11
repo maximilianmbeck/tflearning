@@ -1,0 +1,115 @@
+config:
+  run_script_name: train_instability_analysis
+  run_script_kwargs:
+
+    main_training_job_dir:
+    resume_training_sweep_dir:
+    
+    run_config:
+      exec_type: parallel
+      hostname: dragonfly
+      gpu_ids: [0,1,2,3]
+      runs_per_gpu: 2
+      wandb:
+        init:
+          tags:
+          - ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}_exps
+          - run_handler
+          notes: null
+          group: ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}
+          job_type: run_handler
+
+    start_num: 0
+
+    job_config:
+      experiment_data:
+        entity: fslgroup #jkuiml-fsl
+        project_name: tflearning
+        experiment_tag: '25.0'
+        experiment_type: startnum_${config.run_script_kwargs.start_num}
+        experiment_name: cifar10-${config.run_script_kwargs.job_config.experiment_data.experiment_tag}.${config.run_script_kwargs.start_num}-vittimm
+        experiment_dir: null
+        experiment_notes: 
+        seed: 0
+        gpu_id: 0
+      wandb:
+        init:
+          tags:
+          - ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}_exps
+          notes: ${config.run_script_kwargs.job_config.experiment_data.experiment_notes}
+          group: ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}
+          job_type: ${config.run_script_kwargs.job_config.experiment_data.experiment_type}
+
+      model:
+        name: vittimm
+        model_kwargs:
+          img_size: 32
+          patch_size: 4
+          in_chans: 3
+          num_classes: 10
+          embed_dim: 256
+          depth: 6
+          num_heads: 8
+          mlp_ratio: 2.
+          drop_rate: 0.2
+          attn_drop_rate: 0.2
+
+      trainer:
+        training_setup: supervised
+        n_steps: 64e3
+        log_train_step_every: 100
+        val_every: 500
+        save_every: 64e3
+        batch_size: 128
+        optimizer_scheduler:
+          optimizer_name: AdamW
+          optimizer_kwargs:
+            lr: 3e-4
+            weight_decay: 0.0
+          lr_scheduler_name: MultiStepLR
+          lr_scheduler_kwargs:
+            milestones: [36e3, 54e3]
+            gamma: 0.1
+        loss: crossentropy
+        metrics:
+        - Accuracy
+        num_workers: 4
+
+      data:
+        dataset: cifar10
+        dataset_kwargs:
+          data_root_path: /system/user/beck/pwbeck/data
+        dataset_split:
+          train_val_split: 0.9
+        train_split_transforms:
+          image_transforms:
+          - RandomHorizontalFlip
+          - RandomResizedCrop:
+              size: 32
+              scale: [0.8, 1.0]
+              ratio: [0.9, 1.1]
+          # - RandomCrop:
+          #     size: 32
+          #     padding: 4
+          tensor_transforms: 
+          joint_tensor_transforms: 
+          enable_transforms: True
+
+    # run1
+    instability_analysis_config: 
+      - score_fn: TError
+        interpolation_factors: [-1.0, -0.8999999761581421, -0.800000011920929, -0.699999988079071, -0.6000000238418579, -0.5, -0.3999999761581421, -0.30000001192092896, -0.19999998807907104, -0.09999998658895493, 1.4901161193847656e-08, 0.10000002384185791, 0.20000001788139343, 0.30000001192092896, 0.40000003576278687, 0.5, 0.5999999642372131, 0.699999988079071, 0.7999999523162842, 0.8999999761581421, 1.0, 1.100000023841858, 1.2000000476837158, 1.2999999523162842, 1.399999976158142, 1.5, 1.600000023841858, 1.7000000476837158, 1.7999999523162842, 1.899999976158142, 2.0]
+        interpolate_linear_kwargs: 
+          update_bn_statistics: True
+        init_model_idxes_ks_or_every: [0,5,10,30,50,100,250,500,1000,2000,5000,10000,15000,20000,30000] # show instability at these checkpoint idxes
+        interpolate_at_model_idxes: [-2]
+        save_folder_suffix: 1
+
+    # instability_analysis_config: 
+    #   - score_fn: TError
+    #     interpolation_factors: [0.0, 0.25, 0.5, 0.75, 1.0] #[-1.0, -0.8999999761581421, -0.800000011920929, -0.699999988079071, -0.6000000238418579, -0.5, -0.3999999761581421, -0.30000001192092896, -0.19999998807907104, -0.09999998658895493, 1.4901161193847656e-08, 0.10000002384185791, 0.20000001788139343, 0.30000001192092896, 0.40000003576278687, 0.5, 0.5999999642372131, 0.699999988079071, 0.7999999523162842, 0.8999999761581421, 1.0, 1.100000023841858, 1.2000000476837158, 1.2999999523162842, 1.399999976158142, 1.5, 1.600000023841858, 1.7000000476837158, 1.7999999523162842, 1.899999976158142, 2.0]
+    #     interpolate_linear_kwargs: 
+    #       update_bn_statistics: True
+    #     init_model_idxes_ks_or_every: [0,10,50,100,500,2000,5000,15000, 30000] #[0,5,10,30,50,100,250,500,1000,2000,5000,10000,15000,20000,30000] # show instability at these checkpoint idxes
+    #     interpolate_at_model_idxes: [-2]
+    #     save_folder_suffix: debug2

@@ -1,0 +1,89 @@
+config:
+  run_script_name: train_instability_analysis
+  run_script_kwargs:
+    main_training_job_dir: #/system/user/beck/pwbeck/projects/regularization/tflearning/outputs/IA-A-fmnist-19.2.1-resnet--230204_215940
+    resume_training_sweep_dir: 
+
+    run_config:
+      exec_type: parallel
+      hostname: dragonfly
+      gpu_ids: [2]
+      runs_per_gpu: 2
+      wandb:
+        init:
+          tags:
+          - ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}_exps
+          - run_handler
+          notes: null
+          group: ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}
+          job_type: run_handler
+
+    start_num: 3
+
+    job_config:
+      experiment_data:
+        entity: fslgroup #jkuiml-fsl
+        project_name: tflearning
+        experiment_tag: '19.2'
+        experiment_type: startnum_${config.run_script_kwargs.start_num}
+        experiment_name: fmnist-${config.run_script_kwargs.job_config.experiment_data.experiment_tag}.${config.run_script_kwargs.start_num}-resnet
+        experiment_dir: null
+        experiment_notes: 
+        seed: 0
+        gpu_id: 1
+      wandb:
+        init:
+          tags:
+          - ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}_exps
+          notes: ${config.run_script_kwargs.job_config.experiment_data.experiment_notes}
+          group: ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}
+          job_type: ${config.run_script_kwargs.job_config.experiment_data.experiment_type}
+
+      model:
+        model_cfg: resnet20-mnist-B
+
+      trainer:
+        training_setup: supervised
+        n_steps: 24e3
+        log_train_step_every: 10
+        log_additional_logs: true
+        val_every: 500
+        save_every: 3000 # CHECK
+        batch_size: 128
+        optimizer_scheduler:
+          optimizer_name: SGD
+          optimizer_kwargs:
+            lr: 0.5
+            weight_decay: 0.0
+          lr_scheduler_name: MultiStepLR
+          lr_scheduler_kwargs:
+            milestones: [8e3, 16e3]
+            gamma: 0.1
+        loss: crossentropy
+        metrics:
+        - Accuracy
+        num_workers: 4
+
+      data:
+        dataset: fashion_mnist
+        dataset_kwargs:
+          data_root_path: /system/user/beck/pwbeck/data
+        dataset_split:
+          train_val_split: 0.9
+
+
+    instability_analysis_config: 
+      - score_fn: TError
+        interpolation_factors: [-0.5000, -0.4000, -0.3000, -0.2000, -0.1000,  0.0000,  0.1000,  0.2000, 0.3000,  0.4000,  0.5000,  0.6000,  0.7000,  0.8000,  0.9000,  1.0000, 1.1000,  1.2000,  1.3000,  1.4000,  1.5000]
+        interpolate_linear_kwargs: 
+          update_bn_statistics: True
+        init_model_idxes_ks_or_every: [0,5,10,30,50,100,250,500,1000,2000,5000,10000,15000,20000] # show instability at these checkpoint idxes
+        interpolate_at_model_idxes: [-1, -2]
+        # save_folder_suffix:
+      # - score_fn: TError
+      #   interpolation_factors: [-0.5000, -0.4000, -0.3000, -0.2000, -0.1000,  0.0000,  0.1000,  0.2000, 0.3000,  0.4000,  0.5000,  0.6000,  0.7000,  0.8000,  0.9000,  1.0000, 1.1000,  1.2000,  1.3000,  1.4000,  1.5000]
+      #   interpolate_linear_kwargs: 
+      #     update_bn_statistics: False
+      #   init_model_idxes_ks_or_every: [0,5,10,30,50,100,250,500,1000,2000,5000,10000,15000,20000,30000] # show instability at these checkpoint idxes
+      #   interpolate_at_model_idxes: [-1, -2]
+      #   save_folder_suffix: no_bn_update

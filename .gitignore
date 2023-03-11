@@ -10,7 +10,7 @@ outputs/
 tmp/
 res/f_mnist_pretrained
 configs/
-configs_scripts/
+#configs_scripts/
 wandb/
 
 .vscode/**

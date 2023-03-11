@@ -1,0 +1,90 @@
+config:
+  run_script_name: train_instability_analysis
+  run_script_kwargs:
+    main_training_job_dir: /system/user/beck/pwbeck/projects/regularization/tflearning/outputs/IA-A-cifar10-15.1.2-lenet--230204_215744 #/system/user/beck/pwbeck/projects/regularization/tflearning/outputs/IA-A-cifar10-15.1.1-lenet--230120_134928
+    resume_training_sweep_dir: #/system/user/beck/pwbeck/projects/regularization/tflearning/outputs/IA-B-cifar10-15.1.1-lenet--230120_140123
+
+    run_config:
+      exec_type: parallel
+      hostname: dragonfly
+      gpu_ids: [3]
+      runs_per_gpu: 3
+      wandb:
+        init:
+          tags:
+          - ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}_exps
+          - run_handler
+          notes: null
+          group: ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}
+          job_type: run_handler
+
+    start_num: 2
+
+    job_config:
+      experiment_data:
+        entity: fslgroup #jkuiml-fsl
+        project_name: tflearning
+        experiment_tag: '15.1'
+        experiment_type: startnum_${config.run_script_kwargs.start_num}
+        experiment_name: cifar10-${config.run_script_kwargs.job_config.experiment_data.experiment_tag}.${config.run_script_kwargs.start_num}-lenet #! override this in script, add prefix 'IA-X-'
+        experiment_dir: null
+        experiment_notes: 
+        seed: 0
+        gpu_id: 1
+      wandb:
+        init:
+          tags:
+          - ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}_exps
+          notes: ${config.run_script_kwargs.job_config.experiment_data.experiment_notes}
+          group: ${config.run_script_kwargs.job_config.experiment_data.experiment_tag}
+          job_type: ${config.run_script_kwargs.job_config.experiment_data.experiment_type}
+
+      model:
+        model_cfg: lenet_300_100_relu_cifar10 #resnet20-cifar10-B
+
+      trainer:
+        training_setup: supervised
+        n_steps: 96e3 #64e3
+        log_train_step_every: 10
+        log_additional_logs: true
+        val_every: 500
+        save_every: 10000 # CHECK
+        batch_size: 128
+        optimizer_scheduler:
+          optimizer_name: AdamW
+          optimizer_kwargs:
+            lr: 0.001
+            weight_decay: 0.0
+          lr_scheduler_name: MultiStepLR
+          lr_scheduler_kwargs:
+            milestones: [32e3, 64e3] # [32e3, 48e3]
+            gamma: 0.1
+        loss: crossentropy
+        metrics:
+        - Accuracy
+        num_workers: 4
+
+      data:
+        dataset: cifar10
+        dataset_kwargs:
+          data_root_path: /system/user/beck/pwbeck/data
+        dataset_split:
+          train_val_split: 0.9
+        train_split_transforms:
+          image_transforms:
+          - RandomHorizontalFlip
+          - RandomCrop:
+              size: 32
+              padding: 4
+          tensor_transforms: 
+          joint_tensor_transforms: 
+          enable_transforms: True
+
+    instability_analysis_config: 
+      score_fn: TError
+      interpolation_factors: [-0.1000,  0.0000,  0.1000,  0.3000,  0.5000,  0.7000,  0.9000,  1.0000, 1.1000] #[0.0, 0.25, 0.5, 0.75, 1.0] #
+      interpolate_linear_kwargs: 
+        update_bn_statistics: False
+      init_model_idxes_ks_or_every: [0,5,10,30,50,100,250,500,1000,2000,5000,10000,15000,20000,30000] # show instability at these checkpoint idxes
+      interpolate_at_model_idxes: [-1, -2]
+      save_folder_suffix: Accuracy-nobn-1
