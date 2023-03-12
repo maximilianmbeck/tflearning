@@ -1,25 +1,31 @@
 import torch
 import logging
 from torch import nn
-from torch.utils import data
-from omegaconf import DictConfig
+from dataclasses import dataclass
 
-from ml_utilities.data.classificationdataset import ClassificationDatasetWrapper
-from ml_utilities.trainer.supervisedbasetrainer import SupervisedBaseTrainer
+from ml_utilities.trainer.universalbasetrainer import UniversalBaseTrainer
+from ml_utilities.config import Config
 from ml_utilities.trainer import register_trainer
+
+from tflearning.models.creator import create_model, ModelConfig
+from tflearning.data.creator import create_datasetgenerator, DataConfig
 
 LOGGER = logging.getLogger(__name__)
 
-class FinetuneTrainer(SupervisedBaseTrainer):
+@dataclass
+class FinetuneConfig(Config):
+    model: ModelConfig
+    data: DataConfig
 
-    def __init__(self, config: DictConfig):
-        super().__init__(config)
-        self._finetune_cfg = config.model.get('finetune', None)
+class FinetuneTrainer(UniversalBaseTrainer):
+    config_class = FinetuneConfig
+
+    def __init__(self, config: FinetuneConfig):
+        super().__init__(config, model_init_func=create_model, datasetgenerator_init_func=create_datasetgenerator)
 
     def _create_model(self) -> None:
+        self.config.model.kwargs['num_output_logits'] = self._datasetgenerator.num_classes
         super()._create_model()
-        from tflearning.finetune_utils import prepare_model_for_finetuning
-        self._model = prepare_model_for_finetuning(self._model, self._finetune_cfg.layer_name, self._finetune_cfg.num_output_logits)
         
         
 

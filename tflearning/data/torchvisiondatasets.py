@@ -28,17 +28,15 @@ SVHN_NORMALIZER = {
 
 
 class Food101(TorchBuiltInDataset):
-    """This dataset is resized to 224x224."""
     def __init__(self,
                  data_root_path: Union[str, Path],
                  split: str = 'train',
                  normalizer: Union[str, Dict[str, Union[float, List[float]]]] = Food101_NORMALIZER):
         self._normalizer = normalizer
 
-        self.dataset = datasets.Food101(root=data_root_path, split=split, download=True, transform=transforms.Resize((224, 224)))
+        self.dataset = datasets.Food101(root=data_root_path, split=split, download=True)
     
 class SUN397(TorchBuiltInDataset):
-    """This dataset is resized to 224x224."""
     def __init__(self,
                  data_root_path: Union[str, Path],
                  split: str = 'train',
@@ -46,7 +44,7 @@ class SUN397(TorchBuiltInDataset):
         self._normalizer = normalizer
         if split != 'train':
             raise ValueError('SUN397 does not have a test set.')
-        self.dataset = datasets.SUN397(root=data_root_path, download=True, transform=transforms.Resize((224, 224)))
+        self.dataset = datasets.SUN397(root=data_root_path, download=True)
 
 class Flowers102(TorchBuiltInDataset):
     """This dataset is resized to 224x224."""
@@ -55,7 +53,7 @@ class Flowers102(TorchBuiltInDataset):
                  split: str = 'train',
                  normalizer: Union[str, Dict[str, Union[float, List[float]]]] = Flowers102_NORMALIZER):
         self._normalizer = normalizer
-        self.dataset = datasets.Flowers102(root=data_root_path, split=split, download=True, transform=transforms.Resize((224, 224)))
+        self.dataset = datasets.Flowers102(root=data_root_path, split=split, download=True)
 
 class SVHN(TorchBuiltInDataset):
     """This dataset has size 32x32."""
