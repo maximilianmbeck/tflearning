@@ -1,0 +1,41 @@
+start_num: 0
+
+config:
+  experiment_data:
+    entity: fslgroup
+    project_name: tflearning
+    experiment_tag: '25.1'
+    experiment_type: startnum_${start_num}
+    experiment_name: cifar10-${config.experiment_data.experiment_tag}.${start_num}-resnet18-ft-subsample
+    experiment_dir: null
+    experiment_notes: 
+    seed: 0
+    gpu_id: 1
+  
+  model:
+    name: timmmodel
+    kwargs:
+      name: resnet18
+      timm_kwargs:
+        pretrained: True
+  
+  trainer:
+    training_setup: finetune
+    n_epochs: 15
+    val_every: 1
+    early_stopping_patience: 5
+    save_every: 100e3
+    batch_size: 256
+    optimizer:
+      name: AdamW
+      kwargs:
+        lr: 0.00005
+        weight_decay: 0.0
+    loss: crossentropy
+    num_workers: 6
+  
+  data:
+    name: cifar10
+    kwargs:
+      data_root_path: /system/user/beck/pwbeck/data
+      n_px: 224
