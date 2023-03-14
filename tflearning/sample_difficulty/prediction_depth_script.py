@@ -1,17 +1,15 @@
 import logging
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
-import timm
 import pickle
 from pathlib import Path
 from ml_utilities.run_utils.runner import Runner
-from ml_utilities.output_loader.result_loader import JobResult
 from tflearning.sample_difficulty.prediction_depth import PredictionDepth
+from tflearning.models.creator import create_model
 from ml_utilities.data.datasetgenerator import DatasetGenerator
 from ml_utilities.utils import get_device, set_seed
 import wandb
 LOGGER = logging.getLogger(__name__)
-
 
 
 class PredictionDepthRunner(Runner):
@@ -50,13 +48,13 @@ class PredictionDepthRunner(Runner):
             valloader = None
 
         # model
-        timm_cfg = self.model_cfg.get('timm', None)
-        if timm_cfg:
-            model = timm.create_model(**timm_cfg)
-        ownjob_cfg = self.model_cfg.get('ownjob', None)
-        if ownjob_cfg:
-            job_result = JobResult(ownjob_cfg.job_dir)
-            model = job_result.get_model_idx(ownjob_cfg.checkpoint_idx)
+        model = create_model(model_cfg=self.model_cfg)
+
+        # TODO: add ownjob module in creator
+        # ownjob_cfg = self.model_cfg.get('ownjob', None)
+        # if ownjob_cfg:
+        #     job_result = JobResult(ownjob_cfg.job_dir)
+        #     model = job_result.get_model_idx(ownjob_cfg.checkpoint_idx)
 
         # wandb init
         self._wandb_run = wandb.init(
