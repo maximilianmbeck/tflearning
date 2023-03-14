@@ -65,7 +65,10 @@ class LayerFeatureExtractor(nn.Module):
             softmax_output = F.softmax(x, dim=1)
             if self.append_softmax_output:
                 feature_dict["softmax_output"] = softmax_output.detach()
-            assert len(feature_dict) == len(self.layer_names_ordered), f"Expected {len(self.layer_names_ordered)} features, got {len(self.features)}"
+
+            msg = f"Expected {len(self.layer_names_ordered)} features, got {len(self.features)}"
+            assert len(feature_dict) == len(self.layer_names_ordered), msg
+
         return x, feature_dict
 
 
