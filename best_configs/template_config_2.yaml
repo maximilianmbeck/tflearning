@@ -1,0 +1,78 @@
+defaults:
+- hydra: jobname_outputdir_format
+- _self_
+run_config:
+  exec_type: parallel
+  hostname: wasp
+  gpu_ids:
+  - 0
+  - 1
+  - 2
+  - 3
+  runs_per_gpu: 1
+  wandb:
+    init:
+      tags:
+      - ${config.experiment_data.experiment_tag}_exps
+      - run_handler
+      notes: null
+      group: ${config.experiment_data.experiment_tag}
+      job_type: run_handler
+seeds:
+- 0
+sweep:
+  type: grid
+  axes:
+  - parameter: data.sample_selector.kwargs.fraction
+    vals:
+    - 0.1
+    - 0.2
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
+    - 0.8
+    - 1.0
+start_num: 1
+config:
+  experiment_data:
+    entity: fslgroup
+    project_name: tflearning
+    experiment_tag: '25.1'
+    experiment_type: startnum_${start_num}
+    experiment_name: cifar10-${config.experiment_data.experiment_tag}.${start_num}-resnet18-ft-randomsubsample
+    experiment_dir: null
+    experiment_notes: null
+    seed: 0
+    gpu_id: 1
+  model:
+    name: timmmodel
+    kwargs:
+      name: resnet18
+      timm_kwargs:
+        pretrained: true
+  trainer:
+    training_setup: finetune
+    n_epochs: 100
+    val_every: 1
+    early_stopping_patience: 30
+    save_every: 100000.0
+    batch_size: 256
+    optimizer:
+      name: AdamW
+      kwargs:
+        lr: 5.0e-05
+        weight_decay: 0.0
+    loss: crossentropy
+    num_workers: 6
+  data:
+    name: cifar10
+    kwargs:
+      data_root_path: /system/user/beck/pwbeck/data
+      n_px: 224
+    sample_selector:
+      name: random
+      kwargs:
+        fraction: 0.1
+__config_created: '2023-03-13 11:50:44'
+__config_last_updated: '2023-03-13 11:50:44'
