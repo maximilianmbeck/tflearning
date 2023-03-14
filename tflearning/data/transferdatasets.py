@@ -62,12 +62,23 @@ def _smaller_imgs_transform(n_px: int,
 
 #! Metrics
 def _multiclass_accuracy(num_classes: int, top_k: int = 1) -> MetricCollection:
-    return MetricCollection({f'Accuracy-top-{top_k}': MulticlassAccuracy(num_classes=num_classes, top_k=top_k)})
+    return MetricCollection(
+        {
+            f'Accuracy-top-{top_k}': MulticlassAccuracy(
+                num_classes=num_classes, top_k=top_k
+            )
+        }
+    )
 
 
 class ImgClassificationDatasetGenerator(DatasetGeneratorInterface):
 
-    def __init__(self, data_root_path: Union[str, Path], n_px: int, train_sample_selector: Callable = None):
+    def __init__(
+        self,
+        data_root_path: Union[str, Path],
+        n_px: int,
+        train_sample_selector: Callable = None
+    ):
         self.data_root_path = Path(data_root_path)
         self.n_px = n_px
         self.train_sample_selector = train_sample_selector
@@ -90,24 +101,43 @@ class Cifar10Generator(ImgClassificationDatasetGenerator):
         'std': [0.20230084657669067, 0.19941289722919464, 0.20096157491207123]
     }
 
-    def __init__(self, data_root_path: Union[str, Path], n_px: int, train_sample_selector: Callable = None):
+    def __init__(
+        self,
+        data_root_path: Union[str, Path],
+        n_px: int,
+        train_sample_selector: Callable = None
+    ):
         super().__init__(data_root_path, n_px, train_sample_selector)
 
     def generate_dataset(self) -> None:
-        additional_train_transforms = [RandomHorizontalFlip(), RandomCrop(32, padding=4)]
-        self.train_dataset = datasets.CIFAR10(self.data_root_path,
-                                              train=True,
-                                              download=True,
-                                              transform=_smaller_imgs_transform(self.n_px, True, self.normalizer,
-                                                                                additional_train_transforms))
-        self.val_dataset = datasets.CIFAR10(self.data_root_path,
-                                            train=False,
-                                            download=True,
-                                            transform=_smaller_imgs_transform(self.n_px, False, self.normalizer))
+        additional_train_transforms = [
+            RandomHorizontalFlip(), RandomCrop(32, padding=4)
+        ]
+        self.train_dataset = datasets.CIFAR10(
+            self.data_root_path,
+            train=True,
+            download=True,
+            transform=_smaller_imgs_transform(
+                self.n_px,
+                True,
+                self.normalizer,
+                additional_train_transforms
+            )
+        )
+        self.val_dataset = datasets.CIFAR10(
+            self.data_root_path,
+            train=False,
+            download=True,
+            transform=_smaller_imgs_transform(
+                self.n_px,
+                False,
+                self.normalizer
+            )
+        )
 
         if self.train_sample_selector is not None:
             self.train_dataset = self.train_sample_selector(self.train_dataset)
-            
+
         self._dataset_generated = True
 
     @property
@@ -125,7 +155,7 @@ class Cifar10Generator(ImgClassificationDatasetGenerator):
     @property
     def train_metrics(self) -> MetricCollection:
         return _multiclass_accuracy(self.num_classes)
-    
+
     @property
     def val_metrics(self) -> MetricCollection:
         return _multiclass_accuracy(self.num_classes)

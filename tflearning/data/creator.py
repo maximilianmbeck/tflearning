@@ -5,16 +5,19 @@ from ml_utilities.config import NameAndKwargs
 from tflearning.data.transferdatasets import ImgClassificationDatasetGenerator
 from tflearning.data.sample_selectors import get_sample_selector_class
 
-@dataclass 
+
+@dataclass
 class DatasetGeneratorConfig:
     data_root_path: str
     n_px: int
+
 
 @dataclass
 class DataConfig:
     name: str
     kwargs: DatasetGeneratorConfig
     sample_selector: Optional[NameAndKwargs] = None
+
 
 def create_datasetgenerator(data_cfg: DataConfig) -> ImgClassificationDatasetGenerator:
     from . import get_datasetgenerator_class
@@ -25,9 +28,8 @@ def create_datasetgenerator(data_cfg: DataConfig) -> ImgClassificationDatasetGen
         sample_selector_class = get_sample_selector_class(data_cfg.sample_selector.name)
         sample_selector = sample_selector_class(**data_cfg.sample_selector.kwargs)
 
-    datasetgenerator = datasetgenerator_class(**asdict(data_cfg.kwargs), train_sample_selector=sample_selector)
+    datasetgenerator = datasetgenerator_class(
+        **asdict(data_cfg.kwargs), train_sample_selector=sample_selector
+    )
 
     return datasetgenerator
-
-
-    

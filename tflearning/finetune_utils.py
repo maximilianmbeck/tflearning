@@ -40,7 +40,9 @@ def adapt_last_linear_layer(model: nn.Module, num_output_logits: int) -> nn.Modu
         setattr(model, last_layer_name, new_layer)
     return model
 
-def prepare_model_for_finetuning(model: nn.Module, layer_name: str = '', num_output_logits: int = -1) -> nn.Module:
+def prepare_model_for_finetuning(
+    model: nn.Module, layer_name: str = '', num_output_logits: int = -1
+) -> nn.Module:
     if num_output_logits > 0:
         model = adapt_last_linear_layer(model, num_output_logits)
     if layer_name:
