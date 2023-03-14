@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Union
 import timm
 from dataclasses import dataclass, field
-
+from omegaconf.dictconfig import DictConfig
 from ml_utilities.torch_models.base_model import BaseModel
 from tflearning.finetune_utils import prepare_model_for_finetuning
 
@@ -17,9 +17,9 @@ class TimmModelConfig:
 class TimmModel(BaseModel):
     config_class = TimmModelConfig
 
-    def __init__(self, model_cfg: Union[Dict[str, Any], TimmModelConfig]):
+    def __init__(self, model_cfg: Union[DictConfig, TimmModelConfig]):
         super().__init__()
-        if isinstance(model_cfg, dict):
+        if isinstance(model_cfg, DictConfig):
             model_cfg = TimmModelConfig(**model_cfg)
         self.config = model_cfg
 
