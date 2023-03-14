@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Union
 import timm
 from dataclasses import dataclass, field
-from omegaconf.dictconfig import DictConfig
+from omegaconf import DictConfig
 from ml_utilities.torch_models.base_model import BaseModel
 from tflearning.finetune_utils import prepare_model_for_finetuning
 
