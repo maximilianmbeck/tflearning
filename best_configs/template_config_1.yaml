@@ -70,7 +70,8 @@ config:
   data:
     name: cifar10
     kwargs:
-      data_root_path: /system/user/beck/pwbeck/data
+      # data_root_path: /system/user/beck/pwbeck/data
+      data_root_path: /iarai/home/markus.spanring/workspaces/fsl/data
       n_px: 224
 __config_created: '2023-03-12 20:49:14'
 __config_last_updated: '2023-03-12 20:57:46'

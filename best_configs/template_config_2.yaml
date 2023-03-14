@@ -68,7 +68,8 @@ config:
   data:
     name: cifar10
     kwargs:
-      data_root_path: /system/user/beck/pwbeck/data
+      # data_root_path: /system/user/beck/pwbeck/data
+      data_root_path: /iarai/home/markus.spanring/workspaces/fsl/data
       n_px: 224
     sample_selector:
       name: random
