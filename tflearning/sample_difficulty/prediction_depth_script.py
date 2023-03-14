@@ -6,7 +6,7 @@ from pathlib import Path
 from ml_utilities.run_utils.runner import Runner
 from tflearning.sample_difficulty.prediction_depth import PredictionDepth
 from tflearning.models.creator import create_model
-from ml_utilities.data.datasetgenerator import DatasetGenerator
+from tflearning.data.creator import create_datasetgenerator
 from ml_utilities.utils import get_device, set_seed
 import wandb
 LOGGER = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class PredictionDepthRunner(Runner):
             }
         )
         # data
-        ds_gen = DatasetGenerator(**self.data_cfg)
+        ds_gen = create_datasetgenerator(self.data_cfg)
         ds_gen.generate_dataset()
         train = ds_gen.train_split
         val = ds_gen.val_split
