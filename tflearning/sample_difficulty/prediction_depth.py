@@ -89,6 +89,7 @@ class PredictionDepth:
                  val_dataloader: data.DataLoader = None,
                  experiment_specifier: str = '',
                  save_dir: Path = './',
+                 knn_n_train_samples: int = 1000,
                  knn_n_neighbors: int = 30,
                  knn_kwargs: Dict[str, Any] = {'n_jobs': 10},
                  prediction_depth_mode: str = 'last_layer_knn_prediction',
@@ -124,6 +125,7 @@ class PredictionDepth:
         )
         self.feature_extractor.to(device)
 
+        self.knn_n_train_samples = knn_n_train_samples
         self.knn_n_neighbors = knn_n_neighbors
         self.knn_kwargs = knn_kwargs
         self.prediction_depth_mode = prediction_depth_mode
@@ -192,6 +194,12 @@ class PredictionDepth:
             val_dataloader
         )
 
+        # get random subset of indices from the train dataset
+        train_indices = np.arange(train_labels.shape[0])
+        np.random.shuffle(train_indices)
+        knn_train_indices = train_indices[:self.knn_n_train_samples]
+        print(knn_train_indices.shape)
+
         kNN_predictions = {}
         tbar = tqdm(val_features.items(), desc="Computing kNN predictions")
         for layer_name, layer_val_features in tbar:
@@ -201,7 +209,9 @@ class PredictionDepth:
                 n_neighbors=self.knn_n_neighbors, **self.knn_kwargs
             )
             # we use the true labels
-            knn_classifier.fit(layer_train_features, train_labels)
+            knn_classifier.fit(
+                layer_train_features[knn_train_indices], train_labels[knn_train_indices]
+            )
             kNN_predictions[layer_name] = knn_classifier.predict(layer_val_features)
 
         # output: Dict[str, np.ndarray] containing knn predictions per layer
