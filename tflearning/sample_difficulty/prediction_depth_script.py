@@ -50,12 +50,6 @@ class PredictionDepthRunner(Runner):
         # model
         model = create_model(model_cfg=self.model_cfg)
 
-        # TODO: add ownjob module in creator
-        # ownjob_cfg = self.model_cfg.get('ownjob', None)
-        # if ownjob_cfg:
-        #     job_result = JobResult(ownjob_cfg.job_dir)
-        #     model = job_result.get_model_idx(ownjob_cfg.checkpoint_idx)
-
         # wandb init
         self._wandb_run = wandb.init(
             entity=self.experiment_data_cfg.entity,

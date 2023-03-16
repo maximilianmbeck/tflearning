@@ -7,5 +7,6 @@ def create_model(model_cfg: ModelConfig) -> BaseModel:
     model_class = get_model_class(model_cfg.name)
 
     model = model_class(model_cfg.kwargs)
+    # TODO: add ownjob module in creator
 
     return model

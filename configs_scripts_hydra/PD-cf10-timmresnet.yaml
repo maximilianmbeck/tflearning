@@ -9,29 +9,27 @@ config:
       entity: fslgroup
       project_name: tflearning
       experiment_tag: 'timmresnet'
-      experiment_type: ${config.run_script_kwargs.data.dataset}
-      experiment_name: PD-${config.run_script_kwargs.data.dataset}_timmresnet-imagenet
+      experiment_type: ${config.run_script_kwargs.data.name}
+      experiment_name: PD-${config.run_script_kwargs.data.name}_timmresnet-imagenet
       experiment_dir: null
       experiment_notes: 
       seed: 0
       gpu_id: 1
 
-    data: 
-      dataset: cifar10
-      dataset_kwargs:
+    data:
+      name: cifar10
+      kwargs:
         data_root_path: /system/user/beck/pwbeck/data
-      dataset_split:
-        train_val_split: 1.0 # 0.9
-        restrict_n_samples_train_task: 1000 #10000
+        n_px: 224
       
     model:
-      timm:
-        model_name: resnet18
-        pretrained: True
+      name: timmmodel
+      kwargs:
+        name: resnet18
+        timm_kwargs:
+          pretrained: True
 
     prediction_depth:
       prediction_depth_mode: last_layer_knn_prediction
       append_softmax_output: False
-      layer_names: ['layer1.0.act2','layer1.1.act2','layer2.0.act2','layer2.1.act2','layer3.0.act2','layer3.1.act2','layer4.0.act2','layer4.1.act2','act1']
-    
-
+      layer_names: ['model.layer1.0.act2','model.layer1.1.act2','model.layer2.0.act2','model.layer2.1.act2','model.layer3.0.act2','model.layer3.1.act2','model.layer4.0.act2','model.layer4.1.act2','model.act1']
