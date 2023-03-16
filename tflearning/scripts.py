@@ -35,5 +35,11 @@ class ScriptConfig:
 def run_script(cfg: DictConfig):
     LOGGER.info(f'Running script with config: \n{OmegaConf.to_yaml(cfg)}')
     cfg = from_dict(data_class=ScriptConfig, data=cfg.config)
-    script_runner = get_runner_script(cfg.run_script_name)(**cfg.kwargs)
+    script_runner_class = get_runner_script(cfg.run_script_name)
+    config_class = getattr(script_runner_class, 'config_class', None)
+    if config_class is not None:
+        cfg.kwargs = from_dict(data_class=config_class, data=OmegaConf.to_container(cfg.kwargs, resolve=True))
+        script_runner = script_runner_class(cfg.kwargs)
+    else:
+        script_runner = script_runner_class(**cfg.kwargs)
     script_runner.run()

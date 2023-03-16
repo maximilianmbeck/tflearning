@@ -1,81 +1,103 @@
+from typing import Any, Dict, List, Optional
 import logging
-from omegaconf import DictConfig, OmegaConf
-from torch.utils.data import DataLoader
-import pickle
-from pathlib import Path
-from ml_utilities.run_utils.runner import Runner
-from tflearning.sample_difficulty.prediction_depth import PredictionDepth
-from tflearning.models.creator import create_model
-from tflearning.data.creator import create_datasetgenerator
-from ml_utilities.utils import get_device, set_seed
 import wandb
+import pickle
+import torch
+from dataclasses import asdict, field, dataclass
+from pathlib import Path
+
+from ml_utilities.run_utils.runner import Runner
+from ml_utilities.config import ExperimentConfig
+from ml_utilities.utils import get_device, set_seed
+
+from tflearning.models.creator import create_model, ModelConfig
+from tflearning.data.creator import create_datasetgenerator, DataConfig
+
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class PredictionDepthConfig:
+    """Class that provides the structure for the prediction depth yaml config file.
+    """
+    layer_names: List[str]
+    prediction_depth_mode: Optional[str] = 'last_layer_knn_prediction'
+    append_softmax_output: Optional[bool] = False
+    knn_n_train_samples: Optional[int] = 1000
+    knn_n_neighbors: Optional[int] = 30
+    batch_size: Optional[int] = 128
+    knn_kwargs: Optional[Dict[str, Any]] = field(default_factory=lambda: {'n_jobs': 10})
+    features_before: Optional[bool] = True
+    update_bn_stats: Optional[bool] = False
+    knn_preds_for_val_split: Optional[bool] = False
+
+
+@dataclass
+class PredictionDepthConfigInternal(PredictionDepthConfig):
+    experiment_specifier: Optional[str] = ''
+    save_dir: Optional[Path] = field(default_factory=lambda:Path('./'))
+    features_before: Optional[bool] = True
+    device: Optional[torch.device] = None
+    wandb_run = None
+
+
+@dataclass
+class PredictionDepthRunnerConfig:
+    """Class that provides the structure for the prediction depth runner yaml config file.
+    """
+    experiment_data: ExperimentConfig
+    data: DataConfig
+    model: ModelConfig
+    prediction_depth: PredictionDepthConfig
 
 
 class PredictionDepthRunner(Runner):
 
     str_name = 'prediction_depth'
+    config_class = PredictionDepthRunnerConfig
 
-    def __init__(
-        self,
-        experiment_data: DictConfig,
-        data: DictConfig,
-        model: DictConfig,
-        prediction_depth: DictConfig,
-        **kwargs
-    ):
-        set_seed(self.experiment_data_cfg.seed)
-        
-        self.data_cfg = data
-        self.model_cfg = model
-        self.prediction_depth_cfg = prediction_depth
-        self.experiment_data_cfg = experiment_data
-        config = OmegaConf.create(
-            {
-                'data': data,
-                'model': model,
-                'prediction_depth': prediction_depth,
-                'experiment_data': experiment_data
-            }
-        )
+    def __init__(self, config: PredictionDepthRunnerConfig):
+        self.config = config
+        set_seed(self.config.experiment_data.seed)
+
         # data
-        ds_gen = create_datasetgenerator(self.data_cfg)
+        ds_gen = create_datasetgenerator(self.config.data)
         ds_gen.generate_dataset()
-        train = ds_gen.train_split
-        val = ds_gen.val_split
-        trainloader = DataLoader(train, batch_size=128, shuffle=False)
-        if len(val) > 0:
-            valloader = DataLoader(val, batch_size=128, shuffle=False)
-        else:
-            valloader = None
 
         # model
-        model = create_model(model_cfg=self.model_cfg)
+        model = create_model(model_cfg=self.config.model)
 
         # wandb init
         self._wandb_run = wandb.init(
-            entity=self.experiment_data_cfg.entity,
-            project=self.experiment_data_cfg.project_name,
-            name=self.experiment_data_cfg.experiment_name,
+            entity=self.config.experiment_data.entity,
+            project=self.config.experiment_data.project_name,
+            name=self.config.experiment_data.experiment_name,
             # dir=str(self.logger_directory.dir), # use default wandb dir to enable later wandb sync
-            config=config,
-            group=self.experiment_data_cfg.experiment_tag,
-            job_type=self.experiment_data_cfg.experiment_type,
-            settings=wandb.Settings(start_method='fork')
-        )
+            config=asdict(config),
+            group=self.config.experiment_data.experiment_tag,
+            job_type=self.config.experiment_data.experiment_type,
+            settings=wandb.Settings(start_method='fork'))
 
         # prediction_depth
-        device = get_device(self.experiment_data_cfg.gpu_id)
-        prediction_depth_kwargs = OmegaConf.to_container(
-            self.prediction_depth_cfg, resolve=True
-        )
-        prediction_depth_kwargs['train_dataloader'] = trainloader
-        prediction_depth_kwargs['val_dataloader'] = valloader
-        prediction_depth_kwargs['device'] = device
-        prediction_depth_kwargs['experiment_specifier'] = self.experiment_data_cfg.experiment_name
-        prediction_depth_kwargs['wandb_run'] = self._wandb_run
-        self.prediction_depth = PredictionDepth(model, **prediction_depth_kwargs)
+        from .prediction_depth import PredictionDepth
 
+        device = get_device(self.config.experiment_data.gpu_id)
+
+        pd_cfg = PredictionDepthConfigInternal(**asdict(self.config.prediction_depth))
+        pd_cfg.device = device
+        pd_cfg.experiment_specifier = self.config.experiment_data.experiment_name
+        pd_cfg.save_dir = Path().cwd()
+        pd_cfg.wandb_run = self._wandb_run
+
+        train_dataset = ds_gen.train_split
+        val_dataset = None
+        if self.config.prediction_depth.knn_preds_for_val_split:
+            val_dataset = ds_gen.val_split
+
+        self.prediction_depth = PredictionDepth(model=model,
+                                                train_dataset=train_dataset,
+                                                val_dataset=val_dataset,
+                                                config=pd_cfg)
 
     def run(self) -> None:
         plots = self.prediction_depth.make_plots()

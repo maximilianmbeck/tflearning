@@ -19,7 +19,7 @@ class TimmModel(BaseModel):
 
     def __init__(self, model_cfg: Union[DictConfig, TimmModelConfig]):
         super().__init__()
-        if isinstance(model_cfg, DictConfig):
+        if isinstance(model_cfg, (DictConfig, dict)):
             model_cfg = TimmModelConfig(**model_cfg)
         self.config = model_cfg
 

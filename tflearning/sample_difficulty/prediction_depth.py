@@ -10,6 +10,8 @@ from tqdm import tqdm
 import torch.nn.functional as F
 import logging
 import matplotlib.pyplot as plt
+
+from .prediction_depth_script import PredictionDepthConfigInternal
 """Implementation of the prediction depth according to [1].
 
 [1] Baldock, Robert J. N., Hartmut Maennel, and Behnam Neyshabur. 2021.
@@ -25,7 +27,7 @@ class LayerFeatureExtractor(nn.Module):
 
     def __init__(self,
                  model: nn.Module,
-                 layer_names: List[str],
+                 layer_names: List[str] = [],
                  features_before: bool = True,
                  append_softmax_output: bool = True):
         super().__init__()
@@ -45,12 +47,23 @@ class LayerFeatureExtractor(nn.Module):
             features = features.detach()
             self.features.append(features)
 
+        # register save_features_hook for selected layers
         for name, module in self.model.named_modules():
             if name in layer_names:
                 module.register_forward_hook(save_features_hook)
                 self.layer_names_ordered.append(name)
         if self.append_softmax_output:
             self.layer_names_ordered.append("softmax_output")
+
+    def get_ordered_layer_names(self, layer_names: List[str], append_softmax_output: bool = True):
+        """Return an from input to output ordered list of layer names."""
+        layer_names_ordered = []
+        for name, module in self.model.named_modules():
+            if name in layer_names:
+                layer_names_ordered.append(name)
+        if append_softmax_output:
+            layer_names_ordered.append("softmax_output")
+        return layer_names_ordered
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         with torch.no_grad():
@@ -79,121 +92,89 @@ class PredictionDepth:
 
     def __init__(self,
                  model: nn.Module,
-                 layer_names: List[str],
-                 train_dataloader: data.DataLoader,
-                 val_dataloader: data.DataLoader = None,
-                 experiment_specifier: str = '',
-                 save_dir: Path = './',
-                 knn_n_train_samples: int = 1000,
-                 knn_n_neighbors: int = 30,
-                 knn_kwargs: Dict[str, Any] = {'n_jobs': 10},
-                 prediction_depth_mode: str = 'last_layer_knn_prediction',
-                 features_before: bool = True,
-                 append_softmax_output: bool = True,
-                 update_bn_statistics: bool = False,
-                 device: torch.device = None,
-                 wandb_run=None,
+                 train_dataset: data.Dataset,
+                 config: PredictionDepthConfigInternal,
+                 val_dataset: data.Dataset = None,
                  **kwargs):
 
+        self.config = config
+
         self.model = model
-        self.layer_names = layer_names
-        self.features_before = features_before
-        self.train_dataloader = train_dataloader
-        self.val_dataloader = val_dataloader
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.device = device
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.device = self.config.device
+        if self.device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # update model batchnorm statistics
         self.model.to(device=self.device)
         self.model.eval()
-        if update_bn_statistics:
+
+        if self.config.update_bn_stats:
             LOGGER.info('Updating batchnorm statistics')
-            torch.optim.swa_utils.update_bn(train_dataloader, self.model, device=self.device)
+            torch.optim.swa_utils.update_bn(data.DataLoader(train_dataset, batch_size=self.config.batch_size),
+                                            self.model,
+                                            device=self.device)
 
-        self.feature_extractor = LayerFeatureExtractor(model,
-                                                       layer_names,
-                                                       features_before,
-                                                       append_softmax_output=append_softmax_output)
-        self.feature_extractor.to(device)
-
-        self.knn_n_train_samples = knn_n_train_samples
-        self.knn_n_neighbors = knn_n_neighbors
-        self.knn_kwargs = knn_kwargs
-        self.prediction_depth_mode = prediction_depth_mode
-
-        self.experiment_specifier = experiment_specifier
-        self.save_dir = Path(save_dir)
-        self.wandb_run = wandb_run
+        # get kNN train set indices
+        self.knn_train_indices = np.random.default_rng().choice(len(train_dataset),
+                                                                self.config.knn_n_train_samples,
+                                                                replace=False)
 
         self.num_classes = None
         self.layer_names_ordered = None
         self.results = None
 
-    def _extract_features(self, dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
-
+    def _extract_layer_features(self,
+                                dataloader: data.DataLoader,
+                                layer_name: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Extract features from the model for the given layer. If no layer is given, the last layer is used.
+        The dataloader must NOT shuffle the data."""
         feature_batches = []
         label_batches = []
-        prediction_batches = []
-        self.feature_extractor.eval()
+        model_prediction_batches = []
+        if layer_name is None:
+            feature_extractor = LayerFeatureExtractor(self.model, [],
+                                                      self.config.features_before,
+                                                      append_softmax_output=True)
+        else:
+            feature_extractor = LayerFeatureExtractor(self.model, [layer_name],
+                                                      self.config.features_before,
+                                                      append_softmax_output=False)
+
+        feature_extractor.eval()
         for x, y in dataloader:
             x, y = x.to(self.device), y.to(self.device)
-            pred, feature_dict = self.feature_extractor(x)
-
+            pred, feature_dict = feature_extractor(x)
+            assert len(feature_dict) == 1, "Only one layer can be extracted at a time."
             # move the tensors to the cpu and covert them to numpy arrays
             # this avoids running out of memory on the cuda device
             for key, value in feature_dict.items():
-                feature_dict[key] = value.cpu().numpy()
-            feature_batches.append(feature_dict)
+                feature_batches.append(value.cpu().numpy())
             label_batches.append(y.cpu().numpy())
-            prediction_batches.append(pred.detach().cpu().numpy())
+            model_prediction_batches.append(pred.detach().cpu().numpy())
 
         # concatenate the batches
-        layer_names = list(feature_batches[0].keys())
-        layer_features = {}
-        for layer_name in layer_names:
-            feats = np.concatenate([batch[layer_name] for batch in feature_batches], axis=0)
-            feats = feats.reshape(feats.shape[0], -1)
-            layer_features[layer_name] = feats
+        feats = np.concatenate(feature_batches, axis=0)
+        layer_features = feats.reshape(feats.shape[0], -1)
 
         labels = np.concatenate(label_batches, axis=0)
-        predictions = np.concatenate(prediction_batches, axis=0).argmax(axis=-1)
+        model_predictions = np.concatenate(model_prediction_batches, axis=0).argmax(axis=-1)
         if self.num_classes is None:
             self.num_classes = labels.max() + 1
         if self.layer_names_ordered is None:
-            self.layer_names_ordered = self.feature_extractor.layer_names_ordered
+            self.layer_names_ordered = feature_extractor.layer_names_ordered
 
-        return layer_features, labels, predictions
+        return layer_features, labels, model_predictions
 
-    def _predict_layer_knn(self,
-                           val_dataloader: data.DataLoader) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
-        # !!this needs a lot of memory as the full train and the full
-        # val set (including the hidden representations) are stored in memory
-        # extract features train dataset
-        LOGGER.info("Extracting features for train and val dataset")
-        train_features, train_labels, train_predictions = self._extract_features(self.train_dataloader)
-        # extract features
-        val_features, val_labels, val_predictions = self._extract_features(val_dataloader)
-
-        # get random subset of indices from the train dataset
-        train_indices = np.arange(train_labels.shape[0])
-        np.random.shuffle(train_indices)
-        knn_train_indices = train_indices[:self.knn_n_train_samples]
-        print(knn_train_indices.shape)
-
-        kNN_predictions = {}
-        tbar = tqdm(val_features.items(), desc="Computing kNN predictions")
-        for layer_name, layer_val_features in tbar:
-            layer_train_features = train_features[layer_name]
-            # compute kNN predictions
-            knn_classifier = KNeighborsClassifier(n_neighbors=self.knn_n_neighbors, **self.knn_kwargs)
-            # we use the true labels
-            knn_classifier.fit(layer_train_features[knn_train_indices], train_labels[knn_train_indices])
-            kNN_predictions[layer_name] = knn_classifier.predict(layer_val_features)
-
-        # output: Dict[str, np.ndarray] containing knn predictions per layer
-        # output: np.ndarray true labes
-        # output: np.ndarray predicted labels
-        return kNN_predictions, val_labels, val_predictions
+    def _predict_layer_knn(self, layer_features: np.ndarray,
+                           gt_labels: np.ndarray) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
+        assert layer_features.shape[0] == gt_labels.shape[0], "Number of features and labels must match."
+        # compute kNN predictions
+        knn_classifier = KNeighborsClassifier(n_neighbors=self.config.knn_n_neighbors, **self.config.knn_kwargs)
+        # we use the true labels
+        knn_classifier.fit(layer_features[self.knn_train_indices], gt_labels[self.knn_train_indices])
+        knn_predictions = knn_classifier.predict(layer_features)
+        return knn_predictions
 
     def _compute_layer_accuracies(self, kNN_predictions: Dict[str, np.ndarray], labels: np.ndarray,
                                   final_predictions: np.ndarray) -> Dict[str, float]:
@@ -245,16 +226,33 @@ class PredictionDepth:
         pred_depths = {'correct': pred_depths_correct, 'wrong': pred_depths_wrong}
         return pred_depths, layer_preds
 
-    def _compute_for_dataloader(self, dataloader: data.DataLoader) -> Tuple[Dict[str, float], np.ndarray, np.ndarray]:
+    def _compute_for_dataset(self, dataset: data.Dataset) -> Dict[str, Union[Dict[str, float], np.ndarray]]:
 
-        knn_preds, labels, preds = self._predict_layer_knn(dataloader)
-        layer_accs = self._compute_layer_accuracies(knn_preds, labels, preds)
-        pred_depths, layer_preds = self._compute_prediction_depths(knn_preds,
+        # get the ordered layer names
+        layer_feature_extractor = LayerFeatureExtractor(self.model)
+        self.layer_names_ordered = layer_feature_extractor.get_ordered_layer_names(self.config.layer_names,
+                                                                                   self.config.append_softmax_output)
+
+        # get the dataloader
+        dataloader = data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False, num_workers=0)
+
+        knn_layer_preds = {}
+        # for each layer extract features and predict kNN
+        pbar = tqdm(self.layer_names_ordered)
+        for layer_name in pbar:
+            pbar.set_description(f"kNN Layer {layer_name}")
+            layer_features, labels, preds = self._extract_layer_features(dataloader=dataloader, layer_name=layer_name)
+            knn_preds = self._predict_layer_knn(layer_features, labels)
+            knn_layer_preds[layer_name] = knn_preds
+
+        layer_accs = self._compute_layer_accuracies(knn_layer_preds, labels, preds)
+        pred_depths, layer_preds = self._compute_prediction_depths(knn_layer_preds,
                                                                    labels,
                                                                    preds,
-                                                                   mode=self.prediction_depth_mode)
+                                                                   mode=self.config.prediction_depth_mode)
 
-        return layer_accs, pred_depths, layer_preds
+        ret_dict = {'layer_accs': layer_accs, 'pred_depths': pred_depths, 'layer_preds': layer_preds, 'labels': labels}
+        return ret_dict
 
     def compute(self) -> Tuple[Dict[str, float], np.ndarray]:
         """Compute the layer accuracies and the prediction
@@ -265,20 +263,10 @@ class PredictionDepth:
         """
         ret_dict = {}
         LOGGER.info("Computing layer accuracies and prediction depths for train dataset")
-        train_layer_accs, train_pred_depths, train_layer_preds = self._compute_for_dataloader(self.train_dataloader)
-        ret_dict['train'] = {
-            'layer_accs': train_layer_accs,
-            'pred_depths': train_pred_depths,
-            'layer_preds': train_layer_preds
-        }
-        if self.val_dataloader is not None:
+        ret_dict['train'] = self._compute_for_dataset(self.train_dataset)
+        if self.val_dataset is not None:
             LOGGER.info("Computing layer accuracies and prediction depths for val dataset")
-            val_layer_accs, val_pred_depths, val_layer_preds = self._compute_for_dataloader(self.val_dataloader)
-            ret_dict['val'] = {
-                'layer_accs': val_layer_accs,
-                'pred_depths': val_pred_depths,
-                'layer_preds': val_layer_preds
-            }
+            ret_dict['val'] = self._compute_for_dataset(self.val_dataset)
         self.results = ret_dict
         return ret_dict
 

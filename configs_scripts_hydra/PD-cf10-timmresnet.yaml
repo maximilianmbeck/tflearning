@@ -8,18 +8,19 @@ config:
     experiment_data:
       entity: fslgroup
       project_name: tflearning
-      experiment_tag: 'timmresnet'
+      experiment_tag: 'debug'
       experiment_type: ${config.kwargs.data.name}
       experiment_name: PD-${config.kwargs.data.name}_resnet18-pretrained
       experiment_dir: null
       experiment_notes: 
       seed: 0
-      gpu_id: 1
+      gpu_id: 0
 
     data:
       name: cifar10
       kwargs:
-        data_root_path: /system/user/beck/pwbeck/data
+        # data_root_path: /system/user/beck/pwbeck/data
+        data_root_path: /home/max/phd/data/cifar
         n_px: 224
       
     model:

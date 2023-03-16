@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional, Union
 from ml_utilities.config import NameAndKwargs
 from tflearning.data.transferdatasets import ImgClassificationDatasetGenerator
@@ -35,7 +35,7 @@ def create_datasetgenerator(
         sample_selector = sample_selector_class(**data_cfg.sample_selector.kwargs)
 
     datasetgenerator = datasetgenerator_class(
-        **dict(data_cfg.kwargs), train_sample_selector=sample_selector
+        **asdict(data_cfg.kwargs), train_sample_selector=sample_selector
     )
 
     return datasetgenerator
