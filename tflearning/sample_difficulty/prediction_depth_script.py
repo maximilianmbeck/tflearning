@@ -24,6 +24,8 @@ class PredictionDepthRunner(Runner):
         prediction_depth: DictConfig,
         **kwargs
     ):
+        set_seed(self.experiment_data_cfg.seed)
+        
         self.data_cfg = data
         self.model_cfg = model
         self.prediction_depth_cfg = prediction_depth
@@ -74,7 +76,6 @@ class PredictionDepthRunner(Runner):
         prediction_depth_kwargs['wandb_run'] = self._wandb_run
         self.prediction_depth = PredictionDepth(model, **prediction_depth_kwargs)
 
-        set_seed(self.experiment_data_cfg.seed)
 
     def run(self) -> None:
         plots = self.prediction_depth.make_plots()

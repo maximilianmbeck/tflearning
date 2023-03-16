@@ -1,6 +1,8 @@
+from dataclasses import dataclass, field
 import logging
-from typing import Type
+from typing import Dict, Type, Union, Any
 from omegaconf import OmegaConf, DictConfig
+from dacite import from_dict
 
 from ml_utilities.run_utils.runner import Runner
 
@@ -9,11 +11,6 @@ from .mode_connectivity.train_instability_analysis import TrainInstabilityAnalys
 from .sample_difficulty.prediction_depth_script import PredictionDepthRunner
 
 LOGGER = logging.getLogger(__name__)
-
-
-KEY_RUN_SCRIPT_NAME = 'run_script_name'
-KEY_RUN_SCRIPT_KWARGS = 'run_script_kwargs'
-
 
 _runner_registry = {
     InstabilityAnalyzer.str_name: InstabilityAnalyzer,
@@ -29,19 +26,14 @@ def get_runner_script(run_script: str) -> Type[Runner]:
         assert False, f"Unknown run script \"{run_script}\". Available run_script are: {str(_runner_registry.keys())}"
 
 
-class ScriptRunner(Runner):
-
-    def __init__(self, config: DictConfig):
-        OmegaConf.resolve(config)
-        self.runner_script = get_runner_script(config[KEY_RUN_SCRIPT_NAME])
-        self.runner = self.runner_script(**config[KEY_RUN_SCRIPT_KWARGS])
-
-    def run(self) -> None:
-        self.runner.run()
+@dataclass
+class ScriptConfig:
+    run_script_name: str
+    kwargs: Union[DictConfig, Dict[str, Any]] = field(default_factory=dict)
 
 
 def run_script(cfg: DictConfig):
     LOGGER.info(f'Running script with config: \n{OmegaConf.to_yaml(cfg)}')
-    cfg = cfg.config
-    script_runner = ScriptRunner(cfg)
+    cfg = from_dict(data_class=ScriptConfig, data=cfg.config)
+    script_runner = get_runner_script(cfg.run_script_name)(**cfg.kwargs)
     script_runner.run()

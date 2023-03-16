@@ -4,13 +4,13 @@ defaults:
 
 config:
   run_script_name: prediction_depth
-  run_script_kwargs:
+  kwargs:
     experiment_data:
       entity: fslgroup
       project_name: tflearning
       experiment_tag: 'timmresnet'
-      experiment_type: ${config.run_script_kwargs.data.name}
-      experiment_name: PD-${config.run_script_kwargs.data.name}_timmresnet-imagenet
+      experiment_type: ${config.kwargs.data.name}
+      experiment_name: PD-${config.kwargs.data.name}_resnet18-pretrained
       experiment_dir: null
       experiment_notes: 
       seed: 0
