@@ -281,6 +281,16 @@ class PredictionDepth:
         pred_depths = {'correct': pred_depths_correct, 'wrong': pred_depths_wrong}
         return pred_depths, layer_preds
 
+    def _compute_layer_prediction_entropies(self, layer_preds: np.ndarray, num_classes: int) -> np.ndarray:
+        # compute entropy over layer predictions
+        pred_counts = np.zeros((len(layer_preds), num_classes))
+        # 1 count occurences of predictions accross layers 
+        for i in range(layer_preds.shape[0]):
+            pred_counts[i] = np.bincount(layer_preds[i, :], minlength=num_classes)
+        # 2 compute entropy per sample
+        entropies = torch.distributions.Categorical(probs=torch.tensor(pred_counts)).entropy().numpy()
+        return entropies
+
     def _compute_for_dataset(self, dataset: data.Dataset) -> Dict[str, Union[Dict[str, float], np.ndarray]]:
 
         # get dataloaders
@@ -313,7 +323,16 @@ class PredictionDepth:
                                                                    preds,
                                                                    mode=self.config.prediction_depth_mode)
 
-        ret_dict = {'layer_accs': layer_accs, 'pred_depths': pred_depths, 'layer_preds': layer_preds, 'labels': labels}
+        layer_pred_entropy = self._compute_layer_prediction_entropies(layer_preds, self.num_classes)
+
+        ret_dict = {
+            'layer_accs': layer_accs,
+            'pred_depths': pred_depths,
+            'layer_preds': layer_preds,
+            'labels': labels,
+            'num_classes': self.num_classes,
+            'entropies': layer_pred_entropy,
+        }
         return ret_dict
 
     def compute(self) -> Tuple[Dict[str, float], np.ndarray]:
@@ -345,16 +364,19 @@ class PredictionDepth:
         figures = []
         for dataset, res_dict in pred_depth_results.items():
             LOGGER.info(f'Plotting dataset: {dataset}')
-            f, axes = plt.subplots(1, 3, figsize=(3 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54))
-            f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.config.experiment_specifier}", y=1.05)
-            axes.flatten().tolist()
+            f, axes = plt.subplots(2, 2, figsize=(2 * 12 * 1 / 2.54, 3 * 8 * 1 / 2.54))
+            f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.config.experiment_specifier}",
+                       y=1.05)
+            axes = axes.flatten().tolist()
             self._plot_accuracies(axes[0], res_dict['layer_accs'])
-            self._plot_prediction_depths_hist(axes[1:], res_dict['pred_depths'], dataset)
+            self._plot_entropy_hist(axes[1], res_dict['entropies'])
+            self._plot_prediction_depths_hist(axes[2:], res_dict['pred_depths'], dataset)
             figures.append(f)
             if save_format:
-                f.savefig(f'{str(save_dir)}/pred_depth-{self.config.experiment_specifier}-dataset_{dataset}.{save_format}',
-                          dpi=300,
-                          bbox_inches='tight')
+                f.savefig(
+                    f'{str(save_dir)}/pred_depth-{self.config.experiment_specifier}-dataset_{dataset}.{save_format}',
+                    dpi=300,
+                    bbox_inches='tight')
         return figures
 
     def _plot_accuracies(self, ax, layer_accs: Dict[str, float]) -> None:
@@ -369,6 +391,14 @@ class PredictionDepth:
             tbl_data = [[layer, acc] for layer, acc in zip(layer_ind, layer_accs_vals)]
             tbl = wandb.Table(data=tbl_data, columns=['layer', 'acc'])
             wandb.log({f'kNN layer accs': wandb.plot.line(tbl, x='layer', y='acc', title='kNN layer accs')})
+
+    def _plot_entropy_hist(self, ax, entropies: np.ndarray) -> None:
+        ax.set_title('kNN Layer Prediction entropies')
+        ax.hist(entropies, bins=50)
+        ax.set_xlabel('Entropy')
+        ax.set_ylabel('Count')
+        ax.grid(True)
+        # TODO log hist to wandb
 
     def _plot_prediction_depths_hist(self, axes, pred_depths: Dict[str, np.ndarray], dataset: str = '') -> None:
 
