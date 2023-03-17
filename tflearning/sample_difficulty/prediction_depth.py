@@ -1,3 +1,4 @@
+import gc
 import logging
 import sys
 from pathlib import Path
@@ -7,11 +8,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
-import wandb
 from sklearn.neighbors import KNeighborsClassifier
 from torch import nn
 from torch.utils import data
 from tqdm import tqdm
+
+import wandb
 
 from .prediction_depth_script import PredictionDepthConfigInternal
 
@@ -27,16 +29,20 @@ LOGGER = logging.getLogger(__name__)
 
 
 class LayerFeatureExtractor(nn.Module):
+    """Module that extracts features from a model at the specified layers.
+    """
 
     def __init__(self,
                  model: nn.Module,
                  layer_names: List[str] = [],
                  features_before: bool = True,
-                 append_softmax_output: bool = True):
+                 append_softmax_output: bool = False):
         super().__init__()
         self.model = model
+        self.model.eval()
+
         self.features_before = features_before
-        self.append_softmax_output = append_softmax_output
+        self._append_softmax_output = append_softmax_output
         self.features = []
         self.layer_names_ordered = []
 
@@ -50,13 +56,43 @@ class LayerFeatureExtractor(nn.Module):
             features = features.detach()
             self.features.append(features)
 
+        self._save_features_hook = save_features_hook
+        self.registered_hooks = self._register_hooks(layer_names)
+
+    @property
+    def append_softmax_output(self) -> bool:
+        return self._append_softmax_output
+
+    @append_softmax_output.setter
+    def append_softmax_output(self, append_softmax_output: bool) -> None:
+        self._append_softmax_output = append_softmax_output
+        self._remove_hooks()
+        self.registered_hooks = self._register_hooks(self.layer_names_ordered)
+
+    @property
+    def layer_names(self) -> List[str]:
+        return self.layer_names_ordered
+
+    @layer_names.setter
+    def layer_names(self, layer_names: List[str]) -> None:
+        self._remove_hooks()
+        self.registered_hooks = self._register_hooks(layer_names)
+
+    def _register_hooks(self, layer_names: List[str]) -> List[torch.utils.hooks.RemovableHandle]:
+        registered_hooks = []
+        self.layer_names_ordered = []
         # register save_features_hook for selected layers
         for name, module in self.model.named_modules():
             if name in layer_names:
-                module.register_forward_hook(save_features_hook)
+                registered_hooks.append(module.register_forward_hook(self._save_features_hook))
                 self.layer_names_ordered.append(name)
         if self.append_softmax_output:
             self.layer_names_ordered.append("softmax_output")
+        return registered_hooks
+
+    def _remove_hooks(self) -> None:
+        for hook in self.registered_hooks:
+            hook.remove()
 
     def get_ordered_layer_names(self, layer_names: List[str], append_softmax_output: bool = True):
         """Return an from input to output ordered list of layer names."""
@@ -79,7 +115,7 @@ class LayerFeatureExtractor(nn.Module):
 
             msg = f"Expected {len(self.layer_names_ordered)} features, got {len(self.features)}"
             assert len(feature_dict) == len(self.layer_names_ordered), msg
-
+            self.features = []
         return x, feature_dict
 
 
@@ -122,9 +158,12 @@ class PredictionDepth:
         self.knn_train_indices = np.random.default_rng().choice(len(train_dataset),
                                                                 self.config.knn_n_train_samples,
                                                                 replace=False)
-
+        # we create a class attribute for the feature extractor instead of recreating it every time we need it
+        # not doing so caused a memory leak on the GPU
+        self.feature_extractor = LayerFeatureExtractor(self.model)
+        self.layer_names_ordered = self.feature_extractor.get_ordered_layer_names(self.config.layer_names,
+                                                                                  self.config.append_softmax_output)
         self.num_classes = None
-        self.layer_names_ordered = None
         self.results = None
 
     def _extract_layer_features_and_knn(
@@ -150,20 +189,16 @@ class PredictionDepth:
         model_prediction_batches = []
         knn_prediction_batches = []
         if layer_name is None:
-            feature_extractor = LayerFeatureExtractor(self.model, [],
-                                                      self.config.features_before,
-                                                      append_softmax_output=True)
+            self.feature_extractor.append_softmax_output = self.config.append_softmax_output
         else:
-            feature_extractor = LayerFeatureExtractor(self.model, [layer_name],
-                                                      self.config.features_before,
-                                                      append_softmax_output=False)
+            self.feature_extractor.layer_names = [layer_name]
 
-        feature_extractor.eval()
+        self.feature_extractor.eval()
         for x, y in tqdm(dataloader, file=sys.stdout, desc="Extracting features"):
             x, y = x.to(self.device), y.to(self.device)
-            pred, feature_dict = feature_extractor(x)
+            pred, feature_dict = self.feature_extractor(x)
             assert len(feature_dict) == 1, "Only one layer can be extracted at a time."
-            # move the tensors to the cpu and covert them to numpy arrays
+            # move the tensors to the cpu and convert them to numpy arrays
             # this avoids running out of memory on the cuda device
             for key, value in feature_dict.items():
                 feature_batch = value.cpu().numpy()
@@ -175,7 +210,7 @@ class PredictionDepth:
                 knn_prediction_batches.append(knn_prediction_batch)
             else:
                 feature_batches.append(feature_batch)
-            
+
             label_batches.append(label_batch)
             model_prediction_batches.append(model_prediction_batch)
 
@@ -184,17 +219,15 @@ class PredictionDepth:
         if len(feature_batches) > 0:
             feats = np.concatenate(feature_batches, axis=0)
             layer_features = feats.reshape(feats.shape[0], -1)
-        
+
         knn_predictions = None
         if len(knn_prediction_batches) > 0:
             knn_predictions = np.concatenate(knn_prediction_batches, axis=0)
-        
+
         labels = np.concatenate(label_batches, axis=0)
         model_predictions = np.concatenate(model_prediction_batches, axis=0).argmax(axis=-1)
         if self.num_classes is None:
             self.num_classes = labels.max() + 1
-        if self.layer_names_ordered is None:
-            self.layer_names_ordered = feature_extractor.layer_names_ordered
 
         return layer_features, labels, model_predictions, knn_predictions
 
@@ -250,11 +283,6 @@ class PredictionDepth:
 
     def _compute_for_dataset(self, dataset: data.Dataset) -> Dict[str, Union[Dict[str, float], np.ndarray]]:
 
-        # get the ordered layer names
-        layer_feature_extractor = LayerFeatureExtractor(self.model)
-        self.layer_names_ordered = layer_feature_extractor.get_ordered_layer_names(self.config.layer_names,
-                                                                                   self.config.append_softmax_output)
-
         # get dataloaders
         full_dataloader = data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False, num_workers=0)
         knn_train_dataloader = data.DataLoader(data.Subset(dataset, self.knn_train_indices),
@@ -274,8 +302,9 @@ class PredictionDepth:
             # we use the true labels
             knn_classifier.fit(knn_layer_features, knn_labels)
             # make knn predictions on full dataset
-            _, labels, preds, knn_preds = self._extract_layer_features_and_knn(
-                dataloader=full_dataloader, layer_name=layer_name, knn_classifier=knn_classifier)
+            _, labels, preds, knn_preds = self._extract_layer_features_and_knn(dataloader=full_dataloader,
+                                                                               layer_name=layer_name,
+                                                                               knn_classifier=knn_classifier)
             knn_layer_preds[layer_name] = knn_preds
 
         layer_accs = self._compute_layer_accuracies(knn_layer_preds, labels, preds)
@@ -307,7 +336,7 @@ class PredictionDepth:
         """Plot the layer accuracies and prediction
         depths for the train and val dataset."""
         self.results = self.compute()
-        return self._make_plots(self.results, save_dir=self.save_dir)
+        return self._make_plots(self.results, save_dir=self.config.save_dir)
 
     def _make_plots(self,
                     pred_depth_results: Dict[str, Dict[str, Any]],
@@ -317,13 +346,13 @@ class PredictionDepth:
         for dataset, res_dict in pred_depth_results.items():
             LOGGER.info(f'Plotting dataset: {dataset}')
             f, axes = plt.subplots(1, 3, figsize=(3 * 12 * 1 / 2.54, 1.5 * 8 * 1 / 2.54))
-            f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.experiment_specifier}", y=1.05)
+            f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.config.experiment_specifier}", y=1.05)
             axes.flatten().tolist()
             self._plot_accuracies(axes[0], res_dict['layer_accs'])
             self._plot_prediction_depths_hist(axes[1:], res_dict['pred_depths'], dataset)
             figures.append(f)
             if save_format:
-                f.savefig(f'{str(save_dir)}/pred_depth-{self.experiment_specifier}-dataset_{dataset}.{save_format}',
+                f.savefig(f'{str(save_dir)}/pred_depth-{self.config.experiment_specifier}-dataset_{dataset}.{save_format}',
                           dpi=300,
                           bbox_inches='tight')
         return figures
@@ -336,7 +365,7 @@ class PredictionDepth:
         ax.grid(True)
         ax.set_ylim(0.0, 1.0)
         ax.set_title('kNN layer accs')
-        if self.wandb_run is not None:
+        if self.config.wandb_run is not None:
             tbl_data = [[layer, acc] for layer, acc in zip(layer_ind, layer_accs_vals)]
             tbl = wandb.Table(data=tbl_data, columns=['layer', 'acc'])
             wandb.log({f'kNN layer accs': wandb.plot.line(tbl, x='layer', y='acc', title='kNN layer accs')})
@@ -351,7 +380,7 @@ class PredictionDepth:
             ax.set_xlim(-1.0, len(self.layer_names_ordered))
             ax.grid(True)
             ax.set_title(title)
-            if self.wandb_run is not None:
+            if self.config.wandb_run is not None:
                 hist, bin_edges = np.histogram(pred_depths, bins=bins)
                 sample_count = hist.tolist()
                 pred_depth = np.arange(0, len(self.layer_names_ordered) + 1, 1).tolist()
@@ -361,7 +390,7 @@ class PredictionDepth:
                     {f'{title}': wandb.plot.bar(table=tbl, label='pred_depth', value='sample_count', title=title)})
 
         for ax, (mode, pred_depths) in zip(axes, pred_depths.items()):
-            plot_hist(ax, pred_depths, f'[{mode}] pred depths\n{self.prediction_depth_mode}')
+            plot_hist(ax, pred_depths, f'[{mode}] pred depths\n{self.config.prediction_depth_mode}')
             wandb.log({f'{dataset}-{mode} samples': np.logical_not(np.isnan(pred_depths)).sum()})
             LOGGER.info(f'{mode} predicted samples: {np.logical_not(np.isnan(pred_depths)).sum()}')
 
