@@ -98,10 +98,14 @@ class ImgClassificationDatasetGenerator(DatasetGeneratorInterface):
 
     @property
     def train_split(self) -> data.Dataset:
+        if not self.dataset_generated:
+            raise RuntimeError("Dataset not generated yet. Call generate_dataset() first.")
         return self.train_dataset
 
     @property
     def val_split(self) -> data.Dataset:
+        if not self.dataset_generated:
+            raise RuntimeError("Dataset not generated yet. Call generate_dataset() first.")
         return self.val_dataset
 
     @property
