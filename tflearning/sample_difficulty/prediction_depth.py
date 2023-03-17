@@ -1,17 +1,20 @@
+import logging
+import sys
 from pathlib import Path
-import torch
-import wandb
-import numpy as np
 from typing import Any, Dict, List, Tuple, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn.functional as F
+import wandb
+from sklearn.neighbors import KNeighborsClassifier
 from torch import nn
 from torch.utils import data
-from sklearn.neighbors import KNeighborsClassifier
 from tqdm import tqdm
-import torch.nn.functional as F
-import logging
-import matplotlib.pyplot as plt
 
 from .prediction_depth_script import PredictionDepthConfigInternal
+
 """Implementation of the prediction depth according to [1].
 
 [1] Baldock, Robert J. N., Hartmut Maennel, and Behnam Neyshabur. 2021.
@@ -124,14 +127,28 @@ class PredictionDepth:
         self.layer_names_ordered = None
         self.results = None
 
-    def _extract_layer_features(self,
-                                dataloader: data.DataLoader,
-                                layer_name: str = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Extract features from the model for the given layer. If no layer is given, the last layer is used.
-        The dataloader must NOT shuffle the data."""
+    def _extract_layer_features_and_knn(
+            self,
+            dataloader: data.DataLoader,
+            layer_name: str = None,
+            knn_classifier: KNeighborsClassifier = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Extract features from the model for the given layer and compute knn_classifier predictions. 
+        If no layer is given, the last layer is used.
+        The dataloader must NOT shuffle the data.
+
+        Args:
+            dataloader (data.DataLoader): The dataloader to use for feature extraction and knn prediction.
+            layer_name (str, optional): The layer features to work with. Defaults to None.
+            knn_classifier (KNeighborsClassifier, optional): If specified compute knn preditions and return them instead of 
+                                                             layer features. If None return layer features. Defaults to None.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: 
+        """
         feature_batches = []
         label_batches = []
         model_prediction_batches = []
+        knn_prediction_batches = []
         if layer_name is None:
             feature_extractor = LayerFeatureExtractor(self.model, [],
                                                       self.config.features_before,
@@ -142,21 +159,36 @@ class PredictionDepth:
                                                       append_softmax_output=False)
 
         feature_extractor.eval()
-        for x, y in dataloader:
+        for x, y in tqdm(dataloader, file=sys.stdout, desc="Extracting features"):
             x, y = x.to(self.device), y.to(self.device)
             pred, feature_dict = feature_extractor(x)
             assert len(feature_dict) == 1, "Only one layer can be extracted at a time."
             # move the tensors to the cpu and covert them to numpy arrays
             # this avoids running out of memory on the cuda device
             for key, value in feature_dict.items():
-                feature_batches.append(value.cpu().numpy())
-            label_batches.append(y.cpu().numpy())
-            model_prediction_batches.append(pred.detach().cpu().numpy())
+                feature_batch = value.cpu().numpy()
+            label_batch = y.cpu().numpy()
+            model_prediction_batch = pred.detach().cpu().numpy()
+
+            if knn_classifier is not None:
+                knn_prediction_batch = knn_classifier.predict(feature_batch.reshape(feature_batch.shape[0], -1))
+                knn_prediction_batches.append(knn_prediction_batch)
+            else:
+                feature_batches.append(feature_batch)
+            
+            label_batches.append(label_batch)
+            model_prediction_batches.append(model_prediction_batch)
 
         # concatenate the batches
-        feats = np.concatenate(feature_batches, axis=0)
-        layer_features = feats.reshape(feats.shape[0], -1)
-
+        layer_features = None
+        if len(feature_batches) > 0:
+            feats = np.concatenate(feature_batches, axis=0)
+            layer_features = feats.reshape(feats.shape[0], -1)
+        
+        knn_predictions = None
+        if len(knn_prediction_batches) > 0:
+            knn_predictions = np.concatenate(knn_prediction_batches, axis=0)
+        
         labels = np.concatenate(label_batches, axis=0)
         model_predictions = np.concatenate(model_prediction_batches, axis=0).argmax(axis=-1)
         if self.num_classes is None:
@@ -164,17 +196,7 @@ class PredictionDepth:
         if self.layer_names_ordered is None:
             self.layer_names_ordered = feature_extractor.layer_names_ordered
 
-        return layer_features, labels, model_predictions
-
-    def _predict_layer_knn(self, layer_features: np.ndarray,
-                           gt_labels: np.ndarray) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
-        assert layer_features.shape[0] == gt_labels.shape[0], "Number of features and labels must match."
-        # compute kNN predictions
-        knn_classifier = KNeighborsClassifier(n_neighbors=self.config.knn_n_neighbors, **self.config.knn_kwargs)
-        # we use the true labels
-        knn_classifier.fit(layer_features[self.knn_train_indices], gt_labels[self.knn_train_indices])
-        knn_predictions = knn_classifier.predict(layer_features)
-        return knn_predictions
+        return layer_features, labels, model_predictions, knn_predictions
 
     def _compute_layer_accuracies(self, kNN_predictions: Dict[str, np.ndarray], labels: np.ndarray,
                                   final_predictions: np.ndarray) -> Dict[str, float]:
@@ -233,16 +255,27 @@ class PredictionDepth:
         self.layer_names_ordered = layer_feature_extractor.get_ordered_layer_names(self.config.layer_names,
                                                                                    self.config.append_softmax_output)
 
-        # get the dataloader
-        dataloader = data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False, num_workers=0)
+        # get dataloaders
+        full_dataloader = data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False, num_workers=0)
+        knn_train_dataloader = data.DataLoader(data.Subset(dataset, self.knn_train_indices),
+                                               batch_size=self.config.batch_size,
+                                               shuffle=False,
+                                               num_workers=0)
 
         knn_layer_preds = {}
         # for each layer extract features and predict kNN
-        pbar = tqdm(self.layer_names_ordered)
+        pbar = tqdm(self.layer_names_ordered, file=sys.stdout)
         for layer_name in pbar:
             pbar.set_description(f"kNN Layer {layer_name}")
-            layer_features, labels, preds = self._extract_layer_features(dataloader=dataloader, layer_name=layer_name)
-            knn_preds = self._predict_layer_knn(layer_features, labels)
+            # create knn classifier
+            knn_layer_features, knn_labels, _, _ = self._extract_layer_features_and_knn(dataloader=knn_train_dataloader,
+                                                                                        layer_name=layer_name)
+            knn_classifier = KNeighborsClassifier(n_neighbors=self.config.knn_n_neighbors, **self.config.knn_kwargs)
+            # we use the true labels
+            knn_classifier.fit(knn_layer_features, knn_labels)
+            # make knn predictions on full dataset
+            _, labels, preds, knn_preds = self._extract_layer_features_and_knn(
+                dataloader=full_dataloader, layer_name=layer_name, knn_classifier=knn_classifier)
             knn_layer_preds[layer_name] = knn_preds
 
         layer_accs = self._compute_layer_accuracies(knn_layer_preds, labels, preds)
