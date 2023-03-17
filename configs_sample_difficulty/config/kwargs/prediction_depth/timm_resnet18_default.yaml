@@ -1,0 +1,7 @@
+layer_names: ['model.layer1.0.act2','model.layer1.1.act2','model.layer2.0.act2','model.layer2.1.act2','model.layer3.0.act2','model.layer3.1.act2','model.layer4.0.act2','model.layer4.1.act2','model.act1']
+prediction_depth_mode: last_layer_knn_prediction
+append_softmax_output: False
+knn_n_train_samples: 1000
+knn_n_neighbors: 30
+batch_size: 128
+features_before: True

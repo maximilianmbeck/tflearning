@@ -1,0 +1,9 @@
+entity: fslgroup
+project_name: tflearning
+experiment_tag: null
+experiment_type: ${config.kwargs.data.name}
+experiment_name: PD-${config.kwargs.data.name}-${config.kwargs.model.name}
+experiment_dir: null
+experiment_notes: 
+seed: 0
+gpu_id: 0

@@ -1,0 +1,16 @@
+defaults:
+  - hydra: jobname_outputdir_format
+  - config/kwargs/data: cifar10
+  - config/kwargs/model: timm_resnet18
+  - config/kwargs/experiment_data: default
+  - config/kwargs/prediction_depth: timm_resnet18_default
+  - config/kwargs: platform_config
+  - _self_
+
+config:
+  run_script_name: prediction_depth
+  kwargs:
+    experiment_data:
+      experiment_tag: pdresnet18
+      experiment_name: PD-${config.kwargs.data.name}-${config.kwargs.model.kwargs.name}
+

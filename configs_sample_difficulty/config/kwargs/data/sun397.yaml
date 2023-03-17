@@ -1,0 +1,9 @@
+name: sun397
+kwargs:
+  data_root_path: /system/user/beck/pwbeck/data
+  # data_root_path: /home/max/phd/data/cifar
+  n_px: 224
+# sample_selector:
+#   name: random
+#   kwargs:
+#     fraction: 0.01

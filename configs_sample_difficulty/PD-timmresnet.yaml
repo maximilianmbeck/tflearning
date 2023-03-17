@@ -1,0 +1,19 @@
+defaults:
+  - hydra: jobname_outputdir_format
+  - config/kwargs/data: svhn #flowers102 #cifar100 #sun397 #food101 #cifar10
+  - config/kwargs/model: timm_resnet18
+  - config/kwargs/experiment_data: default
+  - config/kwargs/prediction_depth: timm_resnet18_default
+  - config/kwargs: platform_config
+  - _self_
+
+config:
+  run_script_name: prediction_depth
+  kwargs:
+    experiment_data:
+      experiment_tag: pdresnet18
+      experiment_name: PD-${config.kwargs.data.name}-${config.kwargs.model.kwargs.name}
+
+# CUDA_VISIBLE_DEVICES=MIG-1ab10e43-66c7-51fb-ab71-3c40dc273863 python run_script_hydra.py -cn PD-timmresnet.yaml -cp configs_sample_difficulty
+# CUDA_VISIBLE_DEVICES=MIG-c69ed117-8436-51d1-b4db-183ea0228cd6 python run_script_hydra.py -cn PD-timmresnet.yaml -cp configs_sample_difficulty
+

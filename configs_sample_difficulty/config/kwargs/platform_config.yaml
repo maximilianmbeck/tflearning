@@ -1,0 +1,9 @@
+
+data: 
+  kwargs: 
+    data_root_path: /system/user/beck/pwbeck/data
+
+experiment_data:
+  entity: fslgroup
+  project_name: tflearning
+  

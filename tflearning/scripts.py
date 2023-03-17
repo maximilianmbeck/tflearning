@@ -1,13 +1,15 @@
-from dataclasses import dataclass, field
 import logging
-from typing import Dict, Type, Union, Any
-from omegaconf import OmegaConf, DictConfig
-from dacite import from_dict
+from dataclasses import dataclass, field
+from typing import Any, Dict, Type, Union
 
+from dacite import from_dict
 from ml_utilities.run_utils.runner import Runner
+from ml_utilities.utils import setup_exception_logging
+from omegaconf import DictConfig, OmegaConf
 
 from .mode_connectivity.instability_analysis import InstabilityAnalyzer
-from .mode_connectivity.train_instability_analysis import TrainInstabilityAnalysis
+from .mode_connectivity.train_instability_analysis import \
+    TrainInstabilityAnalysis
 from .sample_difficulty.prediction_depth_script import PredictionDepthRunner
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ class ScriptConfig:
 
 def run_script(cfg: DictConfig):
     LOGGER.info(f'Running script with config: \n{OmegaConf.to_yaml(cfg)}')
+    setup_exception_logging()
     cfg = from_dict(data_class=ScriptConfig, data=cfg.config)
     script_runner_class = get_runner_script(cfg.run_script_name)
     config_class = getattr(script_runner_class, 'config_class', None)

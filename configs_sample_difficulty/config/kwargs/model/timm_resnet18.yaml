@@ -1,0 +1,5 @@
+name: timmmodel
+kwargs:
+  name: resnet18
+  timm_kwargs:
+    pretrained: True
