@@ -277,7 +277,7 @@ class SUN397Generator(ImgClassificationDatasetGenerator):
     def val_split(self) -> datasets.SUN397:
         if self.val_dataset is None:
             LOGGER.warning('SUN397 does not have a validation split')
-        raise self.val_dataset
+        return self.val_dataset
 
     @property
     def train_metrics(self) -> MetricCollection:
