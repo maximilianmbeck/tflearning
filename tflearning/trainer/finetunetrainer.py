@@ -27,6 +27,15 @@ class FinetuneTrainer(UniversalBaseTrainer):
         self.config.model.kwargs['num_output_logits'] = self._datasetgenerator.num_classes
         super()._create_model()
 
+    def _create_datasets(self) -> None:
+        super()._create_datasets()
+        from tflearning.data.sample_selectors import count_samples_per_class
+        from ml_utilities.utils import save_dict_as_json
+        samples_per_class = count_samples_per_class(self._datasets['train'])
+        save_dict = dict(samples_per_class=samples_per_class, num_sampes=len(self._datasets['train']))
+        save_dict_as_json(dictionary=save_dict, path=self.runner_dir, filename='train_dataset_stats.json')
+        LOGGER.info(f"Train samples per class: {samples_per_class}")
+
     def _create_dataloaders(self) -> None:
         from torch.utils import data
 
