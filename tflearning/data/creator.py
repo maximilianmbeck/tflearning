@@ -12,6 +12,7 @@ from tflearning.data.transferdatasets import ImgClassificationDatasetGenerator
 class DatasetGeneratorConfig:
     data_root_path: str
     n_px: int
+    chache_dataset: Optional[bool] = False
 
 
 @dataclass

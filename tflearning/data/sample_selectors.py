@@ -1,10 +1,10 @@
-import pickle
 from pathlib import Path
 from typing import Callable, Type
 
 import numpy as np
 import torch
 from torch.utils import data
+import pickle
 
 
 def _get_sample_idxes_by_metric(sample_idx_metric: np.ndarray,

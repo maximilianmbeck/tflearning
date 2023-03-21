@@ -1,7 +1,7 @@
 import logging
 from abc import abstractmethod
 from pathlib import Path
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import torch
 import torchvision.datasets as datasets
@@ -11,11 +11,14 @@ from PIL import Image
 from torch.utils import data
 from torchmetrics import MetricCollection
 from torchmetrics.classification import MulticlassAccuracy
-from torchvision.transforms import (CenterCrop, Compose, Normalize, RandomCrop,
-                                    RandomHorizontalFlip, RandomResizedCrop,
+from torchvision.transforms import (CenterCrop, Compose, Normalize, RandomCrop, RandomHorizontalFlip, RandomResizedCrop,
                                     Resize, ToTensor)
 
+from .cacheddataset import CachedDataset
+from .datasettransformer import DatasetTransformer
+
 LOGGER = logging.getLogger(__name__)
+
 
 #! Transforms
 def _convert_to_rgb(image):
@@ -83,9 +86,14 @@ def _multiclass_accuracies(num_classes: int, top_k: Union[int, List[int]] = 1) -
 
 class ImgClassificationDatasetGenerator(DatasetGeneratorInterface):
 
-    def __init__(self, data_root_path: Union[str, Path], n_px: int, train_sample_selector: Callable = None):
+    def __init__(self,
+                 data_root_path: Union[str, Path],
+                 n_px: int,
+                 cache_dataset: bool = False,
+                 train_sample_selector: Callable = None):
         self.data_root_path = Path(data_root_path)
         self.n_px = n_px
+        self.cache_dataset = cache_dataset
         self.train_sample_selector = train_sample_selector
         self._dataset_generated = False
         self.train_dataset = None
@@ -95,6 +103,29 @@ class ImgClassificationDatasetGenerator(DatasetGeneratorInterface):
     @abstractmethod
     def num_classes(self) -> int:
         pass
+
+    @abstractmethod
+    def _instantiate_datasets(self) -> Tuple[data.Dataset, data.Dataset]:
+        pass
+
+    def _get_transforms(self) -> Tuple[Callable, Callable]:
+        return lambda x: x, lambda x: x
+
+    def generate_dataset(self) -> None:
+        train_dataset, val_dataset = self._instantiate_datasets()
+        train_transforms, val_transforms = self._get_transforms()
+
+        if self.train_sample_selector is not None:
+            train_dataset = self.train_sample_selector(self.train_dataset)
+
+        if self.cache_dataset:
+            train_dataset = CachedDataset(train_dataset)
+            val_dataset = CachedDataset(val_dataset)
+
+        self.train_dataset = DatasetTransformer(train_dataset, image_transforms=train_transforms)
+        self.val_dataset = DatasetTransformer(val_dataset, image_transforms=val_transforms)
+
+        self._dataset_generated = True
 
     @property
     def train_split(self) -> data.Dataset:
@@ -120,25 +151,24 @@ class Cifar10Generator(ImgClassificationDatasetGenerator):
         'std': [0.20230084657669067, 0.19941289722919464, 0.20096157491207123]
     }
 
-    def __init__(self, data_root_path: Union[str, Path], n_px: int, train_sample_selector: Callable = None, **kwargs):
+    def __init__(self,
+                 data_root_path: Union[str, Path],
+                 n_px: int,
+                 cache_dataset: bool = False,
+                 train_sample_selector: Callable = None,
+                 **kwargs):
         super().__init__(data_root_path, n_px, train_sample_selector)
 
-    def generate_dataset(self) -> None:
+    def _instantiate_datasets(self) -> Tuple[data.Dataset, data.Dataset]:
+        train_dataset = datasets.CIFAR10(self.data_root_path, train=True, download=True)
+        val_dataset = datasets.CIFAR10(self.data_root_path, train=False, download=True)
+        return train_dataset, val_dataset
+
+    def _get_transforms(self) -> Callable:
         additional_train_transforms = [RandomHorizontalFlip(), RandomCrop(32, padding=4)]
-        self.train_dataset = datasets.CIFAR10(self.data_root_path,
-                                              train=True,
-                                              download=True,
-                                              transform=_smaller_imgs_transform(self.n_px, True, self.normalizer,
-                                                                                additional_train_transforms))
-        self.val_dataset = datasets.CIFAR10(self.data_root_path,
-                                            train=False,
-                                            download=True,
-                                            transform=_smaller_imgs_transform(self.n_px, False, self.normalizer))
-
-        if self.train_sample_selector is not None:
-            self.train_dataset = self.train_sample_selector(self.train_dataset)
-
-        self._dataset_generated = True
+        train_transforms = _smaller_imgs_transform(self.n_px, True, self.normalizer, additional_train_transforms)
+        val_transforms = _smaller_imgs_transform(self.n_px, False, self.normalizer)
+        return train_transforms, val_transforms
 
     @property
     def num_classes(self) -> int:
@@ -154,43 +184,44 @@ class Cifar10Generator(ImgClassificationDatasetGenerator):
 
 
 class Cifar100Generator(ImgClassificationDatasetGenerator):
-    
-        normalizer = {
-            'mean': [0.5070751592371323, 0.48654887331495095, 0.4409178433670343],
-            'std': [0.2673342858792401, 0.2564384629170883, 0.27615047132568404]
-        }
-    
-        def __init__(self, data_root_path: Union[str, Path], n_px: int, train_sample_selector: Callable = None, **kwargs):
-            super().__init__(data_root_path, n_px, train_sample_selector)
-    
-        def generate_dataset(self) -> None:
-            additional_train_transforms = [RandomHorizontalFlip(), RandomCrop(32, padding=4)]
-            self.train_dataset = datasets.CIFAR100(self.data_root_path,
-                                                train=True,
-                                                download=True,
-                                                transform=_smaller_imgs_transform(self.n_px, True, self.normalizer,
-                                                                                    additional_train_transforms))
-            self.val_dataset = datasets.CIFAR100(self.data_root_path,
-                                                train=False,
-                                                download=True,
-                                                transform=_smaller_imgs_transform(self.n_px, False, self.normalizer))
-    
-            if self.train_sample_selector is not None:
-                self.train_dataset = self.train_sample_selector(self.train_dataset)
-    
-            self._dataset_generated = True
-    
-        @property
-        def num_classes(self) -> int:
-            return 100
-    
-        @property
-        def train_metrics(self) -> MetricCollection:
-            return _multiclass_accuracies(self.num_classes)
-    
-        @property
-        def val_metrics(self) -> MetricCollection:
-            return _multiclass_accuracies(self.num_classes)
+
+    normalizer = {
+        'mean': [0.5070751592371323, 0.48654887331495095, 0.4409178433670343],
+        'std': [0.2673342858792401, 0.2564384629170883, 0.27615047132568404]
+    }
+
+    def __init__(self, data_root_path: Union[str, Path], n_px: int, train_sample_selector: Callable = None, **kwargs):
+        super().__init__(data_root_path, n_px, train_sample_selector)
+
+    def generate_dataset(self) -> None:
+        additional_train_transforms = [RandomHorizontalFlip(), RandomCrop(32, padding=4)]
+        self.train_dataset = datasets.CIFAR100(self.data_root_path,
+                                               train=True,
+                                               download=True,
+                                               transform=_smaller_imgs_transform(self.n_px, True, self.normalizer,
+                                                                                 additional_train_transforms))
+        self.val_dataset = datasets.CIFAR100(self.data_root_path,
+                                             train=False,
+                                             download=True,
+                                             transform=_smaller_imgs_transform(self.n_px, False, self.normalizer))
+
+        if self.train_sample_selector is not None:
+            self.train_dataset = self.train_sample_selector(self.train_dataset)
+
+        self._dataset_generated = True
+
+    @property
+    def num_classes(self) -> int:
+        return 100
+
+    @property
+    def train_metrics(self) -> MetricCollection:
+        return _multiclass_accuracies(self.num_classes)
+
+    @property
+    def val_metrics(self) -> MetricCollection:
+        return _multiclass_accuracies(self.num_classes)
+
 
 class Food101Generator(ImgClassificationDatasetGenerator):
 
@@ -248,26 +279,24 @@ class SUN397Generator(ImgClassificationDatasetGenerator):
         self.train_val_split = train_val_split
         self.seed = seed
 
-    def generate_dataset(self) -> None:
-        dataset = self.train_dataset = datasets.SUN397(root=self.data_root_path,
-                                                       download=True,
-                                                       transform=_default_imgs_transform(
-                                                           self.n_px, True, self.normalizer))
+    def _instantiate_datasets(self) -> Tuple[data.Dataset, data.Dataset]:
+        dataset = datasets.SUN397(root=self.data_root_path, download=True)
 
         if self.train_val_split >= 1.0 or self.train_val_split <= 0.0:
-            self.train_dataset = dataset
-            self.val_dataset = None
+            train_dataset = dataset
+            val_dataset = None
         else:
             n_train_samples = int(len(dataset) * self.train_val_split)
             n_val_samples = len(dataset) - n_train_samples
-            self.train_dataset, self.val_dataset = data.random_split(dataset,
+            train_dataset, val_dataset = data.random_split(dataset,
                                                                      lengths=[n_train_samples, n_val_samples],
                                                                      generator=torch.Generator().manual_seed(self.seed))
+        return train_dataset, val_dataset
 
-        if self.train_sample_selector is not None:
-            self.train_dataset = self.train_sample_selector(self.train_dataset)
-
-        self._dataset_generated = True
+    def _get_transforms(self) -> Tuple[Callable, Callable]:
+        train_transform = _default_imgs_transform(self.n_px, True, self.normalizer)
+        val_transform = _default_imgs_transform(self.n_px, False, self.normalizer)
+        return train_transform, val_transform
 
     @property
     def num_classes(self) -> int:
