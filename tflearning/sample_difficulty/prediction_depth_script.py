@@ -30,6 +30,7 @@ class PredictionDepthConfig:
     features_before: Optional[bool] = True
     update_bn_stats: Optional[bool] = False
     knn_preds_for_val_split: Optional[bool] = False
+    use_wandb: Optional[bool] = False
 
 
 @dataclass
@@ -68,15 +69,18 @@ class PredictionDepthRunner(Runner):
         model = create_model(model_cfg=self.config.model)
 
         # wandb init
-        self._wandb_run = wandb.init(
-            entity=self.config.experiment_data.entity,
-            project=self.config.experiment_data.project_name,
-            name=self.config.experiment_data.experiment_name,
-            # dir=str(self.logger_directory.dir), # use default wandb dir to enable later wandb sync
-            config=asdict(config),
-            group=self.config.experiment_data.experiment_tag,
-            job_type=self.config.experiment_data.experiment_type,
-            settings=wandb.Settings(start_method='fork'))
+        if self.config.prediction_depth.use_wandb:
+            self._wandb_run = wandb.init(
+                entity=self.config.experiment_data.entity,
+                project=self.config.experiment_data.project_name,
+                name=self.config.experiment_data.experiment_name,
+                # dir=str(self.logger_directory.dir), # use default wandb dir to enable later wandb sync
+                config=asdict(config),
+                group=self.config.experiment_data.experiment_tag,
+                job_type=self.config.experiment_data.experiment_type,
+                settings=wandb.Settings(start_method='fork'))
+        else: 
+            self._wandb_run = None
 
         # prediction_depth
         from .prediction_depth import PredictionDepth
@@ -106,7 +110,8 @@ class PredictionDepthRunner(Runner):
 
         with open(Path().cwd() / 'prediction_depth_results.p', 'wb') as f:
             pickle.dump(pred_depth_results, f)
-
-        self._wandb_run.finish()
+        
+        if self._wandb_run is not None:
+            self._wandb_run.finish()
 
         LOGGER.info('Done.')
