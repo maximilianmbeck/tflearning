@@ -13,7 +13,7 @@ from torchmetrics import MetricCollection
 from torchmetrics.classification import MulticlassAccuracy
 from torchvision.transforms import (CenterCrop, Compose, Normalize, RandomCrop,
                                     RandomHorizontalFlip, RandomResizedCrop,
-                                    Resize, ToTensor)
+                                    Resize, ToTensor, InterpolationMode)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,14 +33,14 @@ def _default_imgs_transform(n_px: int,
     if is_train:
         return Compose([
             *additional_train_transforms,
-            RandomResizedCrop(n_px, scale=(0.9, 1.0), interpolation=Image.BICUBIC),
+            RandomResizedCrop(n_px, scale=(0.9, 1.0), interpolation=InterpolationMode.BICUBIC),
             _convert_to_rgb,
             ToTensor(),
             normalize,
         ])
     else:
         return Compose([
-            Resize(n_px, interpolation=Image.BICUBIC),
+            Resize(n_px, interpolation=InterpolationMode.BICUBIC),
             CenterCrop(n_px),
             _convert_to_rgb,
             ToTensor(),
@@ -57,14 +57,14 @@ def _smaller_imgs_transform(n_px: int,
     if is_train:
         return Compose([
             *additional_train_transforms,
-            Resize(n_px, interpolation=Image.BICUBIC),
+            Resize(n_px, interpolation=InterpolationMode.BICUBIC),
             _convert_to_rgb,
             ToTensor(),
             normalize,
         ])
     else:
         return Compose([
-            Resize(n_px, interpolation=Image.BICUBIC),
+            Resize(n_px, interpolation=InterpolationMode.BICUBIC),
             CenterCrop(n_px),
             _convert_to_rgb,
             ToTensor(),
