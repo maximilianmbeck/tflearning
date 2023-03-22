@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -88,33 +88,52 @@ def plot_pruning_results_fixed_samples(random_pruning_results: SweepResult,
                                        title: str = '',
                                        save_format: str = '',
                                        save_dir: str = '.',
-                                       fraction: float = None, 
+                                       fractions: List[float] = [], 
                                        keep_highest: bool = None) -> plt.Figure:
     ft_row_sel = ('epoch', ft_epoch)
     col_name = f'{ft_col_sel}-{ft_row_sel[0]}-{ft_row_sel[1]}'
     pruning_results = {}
     if random_pruning_results is not None:
         rand_prune_df = random_pruning_results.get_summary(log_source='val', col_sel=ft_col_sel, row_sel=ft_row_sel)
-        if fraction is not None:
-            rand_prune_df = rand_prune_df[rand_prune_df['data.sample_selector.kwargs.fraction'] == fraction]
-        ret = _get_samples_y_col_series(rand_prune_df, label='rand_prune', y_col_name=col_name)
-        pruning_results.update(ret)
+        if fractions:
+            for fr in fractions:
+                rp_df = rand_prune_df[rand_prune_df['data.sample_selector.kwargs.fraction'] == fr]
+                ret = _get_samples_y_col_series(rp_df, label='rand_prune', y_col_name=col_name)
+                pruning_results.update(ret)
+        else:
+            ret = _get_samples_y_col_series(rand_prune_df, label='rand_prune', y_col_name=col_name)
+            pruning_results.update(ret)
 
     if pd_pruning_results is not None:
         pd_prune_df = pd_pruning_results.get_summary(log_source='val', col_sel=ft_col_sel, row_sel=ft_row_sel)
-        if fraction is not None:
-            pd_prune_df = pd_prune_df[pd_prune_df['data.sample_selector.kwargs.fraction'] == fraction]
-        if keep_highest is not None:
-            if keep_highest:
-                ret = _get_samples_y_col_series(pd_prune_df[pd_prune_df['data.sample_selector.kwargs.keep_highest'] == True], label='pd_prune_khighest', y_col_name=col_name)
-                pruning_results.update(ret)
-            else:
-                ret = _get_samples_y_col_series(pd_prune_df[pd_prune_df['data.sample_selector.kwargs.keep_highest'] == False], label='pd_prune_klowest', y_col_name=col_name)
-                pruning_results.update(ret)
+        if fractions:
+            for fr in fractions:
+                pdp_df = pd_prune_df[pd_prune_df['data.sample_selector.kwargs.fraction'] == fr]
+                if keep_highest is not None:
+                    if keep_highest:
+                        ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == True], label='pd_prune_khighest', y_col_name=col_name)
+                        pruning_results.update(ret)
+                    else:
+                        ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == False], label='pd_prune_klowest', y_col_name=col_name)
+                        pruning_results.update(ret)
+                else:
+                    ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == True], label='pd_prune_khighest', y_col_name=col_name)
+                    pruning_results.update(ret)
+                    ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == False], label='pd_prune_klowest', y_col_name=col_name)
+                    pruning_results.update(ret)
         else:
-            ret = _get_samples_y_col_series(pd_prune_df[pd_prune_df['data.sample_selector.kwargs.keep_highest'] == True], label='pd_prune_khighest', y_col_name=col_name)
-            pruning_results.update(ret)
-            ret = _get_samples_y_col_series(pd_prune_df[pd_prune_df['data.sample_selector.kwargs.keep_highest'] == False], label='pd_prune_klowest', y_col_name=col_name)
-            pruning_results.update(ret)
+            pdp_df = pd_prune_df
+            if keep_highest is not None:
+                if keep_highest:
+                    ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == True], label='pd_prune_khighest', y_col_name=col_name)
+                    pruning_results.update(ret)
+                else:
+                    ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == False], label='pd_prune_klowest', y_col_name=col_name)
+                    pruning_results.update(ret)
+            else:
+                ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == True], label='pd_prune_khighest', y_col_name=col_name)
+                pruning_results.update(ret)
+                ret = _get_samples_y_col_series(pdp_df[pdp_df['data.sample_selector.kwargs.keep_highest'] == False], label='pd_prune_klowest', y_col_name=col_name)
+                pruning_results.update(ret)
 
     return make_pruning_figure(pruning_results, title=title, save_format=save_format, save_dir=save_dir)
