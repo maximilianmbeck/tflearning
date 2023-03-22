@@ -3,6 +3,8 @@ from typing import Any, Dict, Optional, Union
 
 import timm
 from ml_utilities.torch_models.base_model import BaseModel
+from ml_utilities.torch_models import register_model
+
 from omegaconf import DictConfig
 
 from tflearning.finetune_utils import prepare_model_for_finetuning
@@ -39,3 +41,5 @@ class TimmModel(BaseModel):
 
     def forward(self, x):
         return self.model(x)
+
+register_model('timmmodel', TimmModel)
