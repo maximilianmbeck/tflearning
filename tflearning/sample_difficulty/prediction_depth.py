@@ -421,7 +421,8 @@ class PredictionDepth:
 
         for ax, (mode, pred_depths) in zip(axes, pred_depths.items()):
             plot_hist(ax, pred_depths, f'[{mode}] pred depths\n{self.config.prediction_depth_mode}')
-            wandb.log({f'{dataset}-{mode} samples': np.logical_not(np.isnan(pred_depths)).sum()})
+            if self.config.wandb_run is not None:
+                wandb.log({f'{dataset}-{mode} samples': np.logical_not(np.isnan(pred_depths)).sum()})
             LOGGER.info(f'{mode} predicted samples: {np.logical_not(np.isnan(pred_depths)).sum()}')
 
 
