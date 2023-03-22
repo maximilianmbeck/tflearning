@@ -5,10 +5,9 @@ import torch
 from ml_utilities.config import Config
 from ml_utilities.trainer import register_trainer
 from ml_utilities.trainer.universalbasetrainer import UniversalBaseTrainer
-from torch import nn
-
 from tflearning.data.creator import DataConfig, create_datasetgenerator
 from tflearning.models.creator import ModelConfig, create_model
+from torch import nn
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,13 +23,14 @@ class FinetuneTrainer(UniversalBaseTrainer):
         super().__init__(config, model_init_func=create_model, datasetgenerator_init_func=create_datasetgenerator)
 
     def _create_model(self) -> None:
-        self.config.model.kwargs['num_output_logits'] = self._datasetgenerator.num_classes
+        if self.config.model.kwargs.get('num_output_logits', -1) <= 0:
+            self.config.model.kwargs['num_output_logits'] = self._datasetgenerator.num_classes
         super()._create_model()
 
     def _create_datasets(self) -> None:
         super()._create_datasets()
-        from tflearning.data.sample_selectors import count_samples_per_class
         from ml_utilities.utils import save_dict_as_json
+        from tflearning.data.sample_selectors import count_samples_per_class
         samples_per_class = count_samples_per_class(self._datasets['train'])
         save_dict = dict(samples_per_class=samples_per_class, num_sampes=len(self._datasets['train']))
         save_dict_as_json(dictionary=save_dict, path=self.runner_dir, filename='train_dataset_stats.json')

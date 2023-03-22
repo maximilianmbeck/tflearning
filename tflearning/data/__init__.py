@@ -2,6 +2,7 @@ from typing import Type
 
 from ml_utilities.data.datasetgeneratorinterface import \
     DatasetGeneratorInterface
+from ml_utilities.data.datasetgenerator import DatasetGenerator
 
 from tflearning.data.transferdatasets import (Cifar10Generator,
                                               Cifar100Generator,
@@ -15,7 +16,8 @@ _datasetgenerator_registry = {
     'svhn': SVHNGenerator,
     'food101': Food101Generator,
     'flowers102': Flowers102Generator,
-    'sun397': SUN397Generator
+    'sun397': SUN397Generator, 
+    'generic': DatasetGenerator
 }
 
 

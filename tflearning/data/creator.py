@@ -1,7 +1,9 @@
 from dataclasses import asdict, dataclass
+from dacite import from_dict
 from typing import Optional, Union
 
 from ml_utilities.config import NameAndKwargs
+from ml_utilities.data import create_datasetgenerator as create_generic_datasetgenerator
 from omegaconf import DictConfig
 
 from tflearning.data.sample_selectors import get_sample_selector_class
@@ -25,6 +27,12 @@ def create_datasetgenerator(
     data_cfg: Union[DictConfig, DataConfig]
 ) -> ImgClassificationDatasetGenerator:
 
+    if data_cfg.name == 'generic':
+        from ml_utilities.data.datasetgenerator import DatasetGeneratorConfig as GenericDatasetGeneratorConfig
+        data_cfg = NameAndKwargs(**data_cfg)
+        data_cfg.kwargs = GenericDatasetGeneratorConfig(**data_cfg.kwargs)
+        return create_generic_datasetgenerator(data_cfg.kwargs)
+    
     from . import get_datasetgenerator_class
 
     if isinstance(data_cfg, DictConfig):
