@@ -1,7 +1,7 @@
 import logging
 import pickle
 from pathlib import Path
-from typing import Callable, Dict, Type
+from typing import Any, Callable, Dict, Tuple, Type
 
 import numpy as np
 import pandas as pd
@@ -74,23 +74,25 @@ class RandomSampleSelector:
     def __call__(self, dataset: data.Dataset) -> data.Dataset:
         n_samples = len(dataset)
         n_samples_to_select = int(n_samples * self.fraction)
-        indices = torch.randperm(n_samples)[:n_samples_to_select]
+        indices = torch.randperm(n_samples)[:n_samples_to_select].numpy()
         indices = get_random_subset_idxes(indices, self.restrict_n_samples)
         return data.Subset(dataset, indices)
 
 
-class PredictionDepthSampleSelector:
+class PruningMetricSampleSelector:
 
     def __init__(self,
                  fraction: float,
-                 pred_results_file: str,
+                 pruning_metric_file: str,
+                 pruning_metric: str, 
                  keep_highest: bool = True,
                  restrict_n_samples: int = -1):
         self.fraction = fraction
-        self.pred_results_file = Path(pred_results_file)
+        self.pruning_metric_file = Path(pruning_metric_file)
         self.keep_highest = keep_highest
-        pred_results = _load_dict(self.pred_results_file)
-        self.pruning_metric = pred_results['train']['entropies']
+        pred_results = _load_dict(self.pruning_metric_file)
+        pruning_metric_extractor = get_pruning_metric_extractor(pruning_metric)
+        self.pruning_metric, _ = pruning_metric_extractor(pred_results)
         assert isinstance(self.pruning_metric,
                           np.ndarray), f"pruning_metric must be a numpy array, but is {type(self.pruning_metric)}"
         self.restrict_n_samples = restrict_n_samples
@@ -103,19 +105,20 @@ class PredictionDepthSampleSelector:
         sample_idxes = get_random_subset_idxes(sample_idxes, self.restrict_n_samples)
         return data.Subset(dataset, sample_idxes)
 
-class PredictionDepthClassBalanceSampleSelector:
+class PruningMetricClassBalanceSampleSelector:
 
     def __init__(self,
                  fraction: float,
-                 pred_results_file: str,
+                 pruning_metric_file: str,
+                 pruning_metric: str,
                  keep_highest: bool = True,
                  restrict_n_samples: int = -1):
         self.fraction = fraction
-        self.pred_results_file = Path(pred_results_file)
+        self.pruning_metric_file = Path(pruning_metric_file)
         self.keep_highest = keep_highest
-        pred_results = _load_dict(self.pred_results_file)
-        self.pruning_metric = pred_results['train']['entropies']
-        self.labels = pred_results['train']['labels']
+        pred_results = _load_dict(self.pruning_metric_file)
+        pruning_metric_extractor = get_pruning_metric_extractor(pruning_metric)
+        self.pruning_metric, self.labels = pruning_metric_extractor(pred_results)
         assert isinstance(self.pruning_metric,
                           np.ndarray), f"pruning_metric must be a numpy array, but is {type(self.pruning_metric)}"
         assert isinstance(self.labels, np.ndarray), f"labels must be a numpy array, but is {type(self.labels)}"
@@ -149,10 +152,25 @@ class PredictionDepthClassBalanceSampleSelector:
         return data.Subset(dataset, sample_idxes)
 
 
+def _extract_prediction_depth(metric_dict: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
+    return metric_dict['train']['entropies'], metric_dict['train']['labels']
+
+def _extract_el2n(metric_dict: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
+    return metric_dict['el2n']['average'], metric_dict['labels']
+
+def _extract_grand(metric_dict: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
+    return metric_dict['grand']['average'], metric_dict['labels']
+
+_pruning_metric_extractor_registry = {
+    'prediction_depth': _extract_prediction_depth,
+    'el2n': _extract_el2n,
+    'grand': _extract_grand,
+}
+
 _sample_selector_registry = {
     'random': RandomSampleSelector,
-    'prediction_depth': PredictionDepthSampleSelector,
-    'prediction_depth_class_balance': PredictionDepthClassBalanceSampleSelector,
+    'prediction_depth': PruningMetricSampleSelector,
+    'prediction_depth_class_balance': PruningMetricClassBalanceSampleSelector,
 }
 
 
@@ -161,3 +179,9 @@ def get_sample_selector_class(sample_selector_name: str) -> Type[Callable]:
         return _sample_selector_registry[sample_selector_name]
     else:
         assert False, f"Unknown sample selector name \"{sample_selector_name}\". Available sample selectors are: {str(_sample_selector_registry.keys())}"
+
+def get_pruning_metric_extractor(metric_name: str) -> Tuple[np.ndarray, np.ndarray]:
+    if metric_name in _pruning_metric_extractor_registry:
+        return _pruning_metric_extractor_registry[metric_name]
+    else:
+        assert False, f"Unknown metric name \"{metric_name}\". Available metrics are: {str(_pruning_metric_extractor_registry.keys())}"

@@ -147,7 +147,7 @@ def compute_grand_for_model(model: nn.Module,
                             loss_fn: Callable = nn.CrossEntropyLoss()) -> Tuple[np.ndarray, np.ndarray]:
     model.eval()
     assert dataloader.batch_size == 1, "Batch size must be 1 for computing the GraNd score."
-    grand_scores = [], 
+    grand_scores = []
     labels = []
     for x, y in tqdm(dataloader, file=sys.stdout, desc="Computing GraNd scores"):
         x = x.to(device)
