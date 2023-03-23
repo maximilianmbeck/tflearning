@@ -1,7 +1,7 @@
 import argparse
 import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Union
+from typing import Any, Callable, Dict, Tuple, Union
 
 import numpy as np
 import torch
@@ -79,10 +79,10 @@ class El2nAndGrandScores:
         grand_run_scores = {}
         for run in tqdm(self.runs, file=sys.stdout, desc="Models"):
             if self.el2n_dataloader is not None:
-                el2n_scores = self._compute_el2n_for_run(run, self.el2n_dataloader, self.compute_at_progress_idx)
+                el2n_scores, labels = self._compute_el2n_for_run(run, self.el2n_dataloader, self.compute_at_progress_idx)
                 el2n_run_scores.update(el2n_scores)
             if self.grand_dataloader is not None:
-                grand_scores = self._compute_grand_for_run(run, self.grand_dataloader)
+                grand_scores, labels = self._compute_grand_for_run(run, self.grand_dataloader)
                 grand_run_scores.update(grand_scores)
 
         result_dict = {}
@@ -90,6 +90,8 @@ class El2nAndGrandScores:
             result_dict["el2n"] = self._create_result_dictionary(el2n_run_scores)
         if self.grand_dataloader is not None:
             result_dict["grand"] = self._create_result_dictionary(grand_run_scores)
+        
+        result_dict["labels"] = labels
 
         from datetime import datetime
         self._save(result_dict, self.sweep_result.directory / f"el2n_grand_scores_{datetime.now().strftime('%y%m%d_%H%M%S')}.p")
@@ -110,40 +112,43 @@ class El2nAndGrandScores:
     def _compute_average_scores(self, scores: Dict[str, np.ndarray]) -> np.ndarray:
         return np.mean(np.stack(list(scores.values())), axis=0)
 
-    def _compute_el2n_for_run(self, run: JobResult, dataloader: DataLoader, progress_idx: int) -> Dict[str, np.ndarray]:
+    def _compute_el2n_for_run(self, run: JobResult, dataloader: DataLoader, progress_idx: int) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         model = run.get_model_idx(progress_idx).to(self.device)
-        scores = compute_el2n_for_model(model=model, dataloader=dataloader, device=self.device)
-        return {run.directory.name: scores}
+        scores, labels = compute_el2n_for_model(model=model, dataloader=dataloader, device=self.device)
+        return {run.directory.name: scores}, labels
 
     def _compute_grand_for_run(self,
                                run: JobResult,
                                dataloader: DataLoader,
-                               progress_idx: int = 0) -> Dict[str, np.ndarray]:
+                               progress_idx: int = 0) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         model = run.get_model_idx(progress_idx).to(self.device)
-        scores = compute_grand_for_model(model=model, dataloader=dataloader, device=self.device)
-        return {run.directory.name: scores}
+        scores, labels = compute_grand_for_model(model=model, dataloader=dataloader, device=self.device)
+        return {run.directory.name: scores}, labels
 
 
-def compute_el2n_for_model(model: nn.Module, dataloader: DataLoader, device: torch.device) -> np.ndarray:
+def compute_el2n_for_model(model: nn.Module, dataloader: DataLoader, device: torch.device) -> Tuple[np.ndarray, np.ndarray]:
     model.eval()
     el2n_scores = []
+    labels = []
     with torch.no_grad():
         for x, y in tqdm(dataloader, file=sys.stdout, desc="Computing EL2N scores"):
             x = x.to(device)
             y = y.to(device)
             y_pred = model(x)
-            el2n_score = torch.norm(y_pred - nn.functional.one_hot(y), p=2, dim=1)
+            el2n_score = torch.norm(nn.functional.softmax(y_pred, dim=1) - nn.functional.one_hot(y), p=2, dim=1)
             el2n_scores.append(el2n_score)
-    return torch.cat(el2n_scores, dim=0).cpu().numpy()
+            labels.append(y)
+    return torch.cat(el2n_scores, dim=0).cpu().numpy(), torch.cat(labels, dim=0).cpu().numpy()
 
 
 def compute_grand_for_model(model: nn.Module,
                             dataloader: DataLoader,
                             device: torch.device,
-                            loss_fn: Callable = nn.CrossEntropyLoss()) -> np.ndarray:
+                            loss_fn: Callable = nn.CrossEntropyLoss()) -> Tuple[np.ndarray, np.ndarray]:
     model.eval()
     assert dataloader.batch_size == 1, "Batch size must be 1 for computing the GraNd score."
-    grand_scores = []
+    grand_scores = [], 
+    labels = []
     for x, y in tqdm(dataloader, file=sys.stdout, desc="Computing GraNd scores"):
         x = x.to(device)
         y = y.to(device)
@@ -153,7 +158,8 @@ def compute_grand_for_model(model: nn.Module,
         loss.backward()
         grand_score = compute_grad_norm(model, ord=2)
         grand_scores.append(grand_score)
-    return np.array(grand_scores)
+        labels.append(y)
+    return np.array(grand_scores), torch.cat(labels, dim=0).cpu().numpy()
 
 
 def _get_args() -> Dict[str, Any]:
