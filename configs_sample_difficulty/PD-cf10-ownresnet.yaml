@@ -1,0 +1,38 @@
+defaults:
+  - hydra: jobname_outputdir_format
+  - config/kwargs/data: cifar10
+  - config/kwargs/experiment_data: default
+  - config/kwargs/prediction_depth: own_resnet20_default
+  - config/kwargs: platform_config
+  - _self_
+
+config:
+  run_script_name: prediction_depth
+  kwargs:
+    experiment_data:
+      experiment_tag: pdresnet20
+      experiment_name: PD-${config.kwargs.data.name}-resnet20-knnsamples${config.kwargs.prediction_depth.knn_n_train_samples}-knnneighs${config.kwargs.prediction_depth.knn_n_neighbors}-seed${config.kwargs.experiment_data.seed}
+      seed: 1
+    
+    model: 
+      model_cfg: resnet20-cifar10-B
+      init_model: /system/user/beck/pwbeck/projects/regularization/tflearning/outputs/cifar10-31-cf10-scratch.2-resnet20-scratch--230323_075326/outputs/cifar10-31-cf10-scratch.2-resnet20-scratch---seed-0--230323_075346/checkpoints/checkpoint-epoch--200.p
+
+    prediction_depth:
+      knn_n_train_samples: 1000
+      knn_n_neighbors: 30
+
+    data: 
+      name: cifar10
+      kwargs:
+        data_root_path: /system/user/beck/pwbeck/data
+        # data_root_path: /home/max/phd/data/cifar
+        n_px: 32
+      # sample_selector:
+      #   name: random
+      #   kwargs:
+      #     fraction: 0.01
+
+# CUDA_VISIBLE_DEVICES=MIG-1ab10e43-66c7-51fb-ab71-3c40dc273863 python run_script_hydra.py -cn PD-cf10-timmresnet-hyps.yaml -cp configs_sample_difficulty
+# multirun
+# CUDA_VISIBLE_DEVICES=MIG-1ab10e43-66c7-51fb-ab71-3c40dc273863 python run_script_hydra.py -cn PD-cf10-timmresnet-hyps.yaml -cp configs_sample_difficulty -m config.kwargs.prediction_depth.knn_n_neighbors=15,30,50

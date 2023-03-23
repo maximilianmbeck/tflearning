@@ -16,7 +16,6 @@ from tqdm import tqdm
 import wandb
 
 from .prediction_depth_script import PredictionDepthConfigInternal
-
 """Implementation of the prediction depth according to [1].
 
 [1] Baldock, Robert J. N., Hartmut Maennel, and Behnam Neyshabur. 2021.
@@ -154,10 +153,6 @@ class PredictionDepth:
                                             self.model,
                                             device=self.device)
 
-        # get kNN train set indices
-        self.knn_train_indices = np.random.default_rng().choice(len(train_dataset),
-                                                                self.config.knn_n_train_samples,
-                                                                replace=False)
         # we create a class attribute for the feature extractor instead of recreating it every time we need it
         # not doing so caused a memory leak on the GPU
         self.feature_extractor = LayerFeatureExtractor(self.model)
@@ -194,7 +189,7 @@ class PredictionDepth:
             self.feature_extractor.layer_names = [layer_name]
 
         self.feature_extractor.eval()
-        for x, y in tqdm(dataloader, file=sys.stdout, desc="Extracting features"):
+        for x, y in tqdm(dataloader, file=sys.stdout, desc=f"Extracting features {layer_name}"):
             x, y = x.to(self.device), y.to(self.device)
             pred, feature_dict = self.feature_extractor(x)
             assert len(feature_dict) == 1, "Only one layer can be extracted at a time."
@@ -284,7 +279,7 @@ class PredictionDepth:
     def _compute_layer_prediction_entropies(self, layer_preds: np.ndarray, num_classes: int) -> np.ndarray:
         # compute entropy over layer predictions
         pred_counts = np.zeros((len(layer_preds), num_classes))
-        # 1 count occurences of predictions accross layers 
+        # 1 count occurences of predictions accross layers
         for i in range(layer_preds.shape[0]):
             pred_counts[i] = np.bincount(layer_preds[i, :], minlength=num_classes)
         # 2 compute entropy per sample
@@ -293,9 +288,12 @@ class PredictionDepth:
 
     def _compute_for_dataset(self, dataset: data.Dataset) -> Dict[str, Union[Dict[str, float], np.ndarray]]:
 
+        # get kNN train set indices
+        knn_train_indices = np.random.default_rng().choice(len(dataset), self.config.knn_n_train_samples, replace=False)
+
         # get dataloaders
         full_dataloader = data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False, num_workers=0)
-        knn_train_dataloader = data.DataLoader(data.Subset(dataset, self.knn_train_indices),
+        knn_train_dataloader = data.DataLoader(data.Subset(dataset, knn_train_indices),
                                                batch_size=self.config.batch_size,
                                                shuffle=False,
                                                num_workers=0)
@@ -342,30 +340,46 @@ class PredictionDepth:
         Returns:
             Tuple[Dict[str, float], np.ndarray]: layer accuracies and prediction depths
         """
-        ret_dict = {}
-        LOGGER.info("Computing layer accuracies and prediction depths for train dataset")
-        ret_dict['train'] = self._compute_for_dataset(self.train_dataset)
-        if self.val_dataset is not None:
-            LOGGER.info("Computing layer accuracies and prediction depths for val dataset")
-            ret_dict['val'] = self._compute_for_dataset(self.val_dataset)
-        self.results = ret_dict
-        return ret_dict
+        subset_results = []
+        for i in tqdm(range(self.config.num_subsets), file=sys.stdout):
+            ret_dict = {}
+            LOGGER.info("Computing layer accuracies and prediction depths for train dataset")
+            ret_dict['train'] = self._compute_for_dataset(self.train_dataset)
+            if self.val_dataset is not None:
+                LOGGER.info("Computing layer accuracies and prediction depths for val dataset")
+                ret_dict['val'] = self._compute_for_dataset(self.val_dataset)
+            subset_results.append(ret_dict)
 
-    def make_plots(self) -> List[plt.Figure]:
+        # average entropies over subsets for entopies
+        subset_entropies = []
+        for subset_result in subset_results:
+            entr = subset_result['train']['entropies']
+            subset_entropies.append(entr)
+        avg_entropies = np.stack(subset_entropies, axis=1).mean(axis=1)
+        results_dict = {}
+        results_dict['single_runs'] = subset_results
+        results_dict['average_train'] = avg_entropies
+        self.results = results_dict
+        return results_dict
+
+    def make_plots(self) -> None:
         """Plot the layer accuracies and prediction
         depths for the train and val dataset."""
         self.results = self.compute()
-        return self._make_plots(self.results, save_dir=self.config.save_dir)
+        for i, subset_result in enumerate(self.results['single_runs']):
+            LOGGER.info(f"Plotting subset {i}")
+            self._make_plots(subset_result, save_dir=self.config.save_dir, plot_num=i)
 
     def _make_plots(self,
                     pred_depth_results: Dict[str, Dict[str, Any]],
                     save_format: str = 'png',
-                    save_dir: Union[Path, str] = './') -> List[plt.Figure]:
+                    save_dir: Union[Path, str] = './', 
+                    plot_num: int = 0) -> List[plt.Figure]:
         figures = []
         for dataset, res_dict in pred_depth_results.items():
             LOGGER.info(f'Plotting dataset: {dataset}')
             f, axes = plt.subplots(2, 2, figsize=(2 * 12 * 1 / 2.54, 3 * 8 * 1 / 2.54))
-            f.suptitle(f"Layer accs + prediction depths for {dataset} dataset-{self.config.experiment_specifier}",
+            f.suptitle(f"#{plot_num} Layer accs + prediction depths for {dataset} dataset-{self.config.experiment_specifier}",
                        y=1.05)
             axes = axes.flatten().tolist()
             self._plot_accuracies(axes[0], res_dict['layer_accs'])
@@ -374,7 +388,7 @@ class PredictionDepth:
             figures.append(f)
             if save_format:
                 f.savefig(
-                    f'{str(save_dir)}/pred_depth-{self.config.experiment_specifier}-dataset_{dataset}.{save_format}',
+                    f'{str(save_dir)}/pred_depth-{plot_num}-{self.config.experiment_specifier}-dataset_{dataset}.{save_format}',
                     dpi=300,
                     bbox_inches='tight')
         return figures

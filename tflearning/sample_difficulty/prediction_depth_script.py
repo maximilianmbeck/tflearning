@@ -10,7 +10,8 @@ from ml_utilities.run_utils.runner import Runner
 from ml_utilities.config import ExperimentConfig
 from ml_utilities.utils import get_device, set_seed
 
-from tflearning.models.creator import create_model, ModelConfig
+# from tflearning.models.creator import create_model, ModelConfig
+from ml_utilities.torch_models import create_model, ModelConfig
 from tflearning.data.creator import create_datasetgenerator, DataConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class PredictionDepthConfig:
     update_bn_stats: Optional[bool] = False
     knn_preds_for_val_split: Optional[bool] = False
     use_wandb: Optional[bool] = False
+    num_subsets: Optional[int] = 10
 
 
 @dataclass
@@ -104,7 +106,7 @@ class PredictionDepthRunner(Runner):
                                                 config=pd_cfg)
 
     def run(self) -> None:
-        plots = self.prediction_depth.make_plots()
+        self.prediction_depth.make_plots()
         # save results
         pred_depth_results = self.prediction_depth.results
 
