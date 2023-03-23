@@ -6,7 +6,9 @@ from ml_utilities.config import Config
 from ml_utilities.trainer import register_trainer
 from ml_utilities.trainer.universalbasetrainer import UniversalBaseTrainer
 from tflearning.data.creator import DataConfig, create_datasetgenerator
-from tflearning.models.creator import ModelConfig, create_model
+# from tflearning.models.creator import ModelConfig, create_model
+from ml_utilities.config import ModelConfig
+from ml_utilities.torch_models import create_model
 from torch import nn
 
 LOGGER = logging.getLogger(__name__)
@@ -23,7 +25,7 @@ class FinetuneTrainer(UniversalBaseTrainer):
         super().__init__(config, model_init_func=create_model, datasetgenerator_init_func=create_datasetgenerator)
 
     def _create_model(self) -> None:
-        if self.config.model.kwargs.get('num_output_logits', -1) <= 0:
+        if self.config.model.name == 'timmmodel':
             self.config.model.kwargs['num_output_logits'] = self._datasetgenerator.num_classes
         super()._create_model()
 
