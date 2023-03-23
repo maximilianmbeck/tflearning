@@ -153,7 +153,7 @@ class PruningMetricClassBalanceSampleSelector:
 
 
 def _extract_prediction_depth(metric_dict: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
-    return metric_dict['train']['entropies'], metric_dict['train']['labels']
+    return metric_dict['average_train'], metric_dict['single_runs'][0]['train']['labels']
 
 def _extract_el2n(metric_dict: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
     return metric_dict['el2n']['average'], metric_dict['labels']
@@ -169,8 +169,8 @@ _pruning_metric_extractor_registry = {
 
 _sample_selector_registry = {
     'random': RandomSampleSelector,
-    'prediction_depth': PruningMetricSampleSelector,
-    'prediction_depth_class_balance': PruningMetricClassBalanceSampleSelector,
+    'pruningmetric': PruningMetricSampleSelector,
+    'pruningmetric_class_balance': PruningMetricClassBalanceSampleSelector,
 }
 
 
