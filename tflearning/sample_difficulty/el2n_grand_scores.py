@@ -82,7 +82,7 @@ class El2nAndGrandScores:
                 el2n_scores, labels = self._compute_el2n_for_run(run, self.el2n_dataloader, self.compute_at_progress_idx)
                 el2n_run_scores.update(el2n_scores)
             if self.grand_dataloader is not None:
-                grand_scores, labels = self._compute_grand_for_run(run, self.grand_dataloader)
+                grand_scores, labels = self._compute_grand_for_run(run, self.grand_dataloader, progress_idx=0)
                 grand_run_scores.update(grand_scores)
 
         result_dict = {}
